@@ -22,7 +22,9 @@ type PrivateKeyAccount = {
   rpcUrl?: string
   type: 'local'
 }
-export type Account = OneOf<LocalAccount | JsonRpcAccount | PrivateKeyAccount> & {
+export type Account = OneOf<
+  LocalAccount | JsonRpcAccount | PrivateKeyAccount
+> & {
   displayName?: string
   key: string
   state: 'loaded' | 'loading'

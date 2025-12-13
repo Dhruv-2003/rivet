@@ -1,10 +1,10 @@
 import {
+  http,
   type Address,
   type Hex,
   type RpcTransactionReceipt,
   type RpcTransactionRequest,
   createWalletClient,
-  http,
   keccak256,
   numberToHex,
   stringToHex,
@@ -415,7 +415,7 @@ async function handleSendCalls({
   }
 
   // Disable automining (if enabled) to mine transactions atomically.
-  let automine
+  let automine: any
   if (networkType === 'anvil') {
     automine = await rpcClient
       .request({
