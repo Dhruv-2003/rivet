@@ -85,9 +85,9 @@ function ImportNetwork() {
       return
     }
 
-    const rpcUrl = /^\d*$/.test(rpcUrl_)
-      ? `http://127.0.0.1:${rpcUrl_}`
-      : rpcUrl_
+    const isPort = /^\d*$/.test(rpcUrl_)
+    const rpcUrl = isPort ? `http://127.0.0.1:${rpcUrl_}` : rpcUrl_
+    const type = isPort ? 'anvil' : 'remote'
 
     try {
       // Upsert a placeholder (loading) network.
@@ -96,6 +96,7 @@ function ImportNetwork() {
         network: {
           chainId: -1,
           rpcUrl,
+          type,
         },
       })
 
@@ -104,6 +105,7 @@ function ImportNetwork() {
         rpcUrl,
         network: {
           rpcUrl,
+          type,
         },
       })
     } catch (error) {

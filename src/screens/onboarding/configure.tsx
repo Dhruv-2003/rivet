@@ -31,6 +31,7 @@ export default function OnboardingConfigure() {
     gasPrice: string
     name: string
     port: string
+    rpcUrl: string
   }
   const { register, handleSubmit, setValue, watch } = useForm<FormValues>({
     defaultValues: {
@@ -39,6 +40,7 @@ export default function OnboardingConfigure() {
       forkUrl: 'https://cloudflare-eth.com',
       name: defaultName,
       port: '8545',
+      rpcUrl: '',
     },
   })
 
@@ -54,7 +56,7 @@ export default function OnboardingConfigure() {
 
   const navigate = useNavigate()
 
-  const { upsertNetwork, switchNetwork } = useNetworkStore()
+  const { upsertNetwork, switchNetwork, setOnboarded } = useNetworkStore()
   const submit = handleSubmit(async (values_) => {
     const values = {
       ...values_,
@@ -65,6 +67,22 @@ export default function OnboardingConfigure() {
       gasPrice: values_.gasPrice
         ? String(Number(values_.gasPrice) ** gweiUnits.wei)
         : '',
+    }
+
+    if (type === 'remote') {
+      await upsertNetwork({
+        rpcUrl: values.rpcUrl,
+        network: {
+          chainId: Number(values.chainId),
+          name: values.networkName,
+          rpcUrl: values.rpcUrl,
+          type: 'remote',
+        },
+      })
+      switchNetwork(values.rpcUrl)
+      setOnboarded(true)
+      navigate('/')
+      return
     }
 
     if (type === 'local') {
@@ -96,6 +114,11 @@ export default function OnboardingConfigure() {
                 Deploy node
               </Button>
             )}
+            {type === 'remote' && (
+              <Button height="44px" type="submit">
+                Connect
+              </Button>
+            )}
             {type === 'local' && (
               <Button height="44px" type="submit">
                 Continue
@@ -119,6 +142,13 @@ export default function OnboardingConfigure() {
                 type="number"
               />
             )}
+            {type === 'remote' && (
+              <Form.InputField
+                label="RPC URL"
+                placeholder="https://mainnet.infura.io/v3/..."
+                register={register('rpcUrl', { required: true })}
+              />
+            )}
             {type === 'hosted' && (
               <Form.InputField
                 defaultValue={defaultName}
@@ -129,66 +159,63 @@ export default function OnboardingConfigure() {
               />
             )}
             <Form.InputField
-              defaultValue={1}
-              label="Chain ID"
-              min={1}
-              register={register('chainId')}
-              type="number"
-            />
-            <Form.InputField
               defaultValue="Ethereum"
               label="Network Name"
               register={register('networkName')}
               required
             />
           </Stack>
-          <Stack gap="16px">
-            <Text>Configure Fork</Text>
-            <Separator />
-            <Form.InputField
-              defaultValue="https://cloudflare-eth.com"
-              label="RPC URL"
-              register={register('forkUrl')}
-            />
-            <Form.InputField
-              label="Block Number"
-              min={1}
-              type="number"
-              register={register('forkBlockNumber')}
-            />
-          </Stack>
-          <Stack gap="16px">
-            <Text>Configure Blocks</Text>
-            <Separator />
-            <Form.CheckboxField
-              label="Auto-mine transactions"
-              register={register('autoMine')}
-            />
-            <Form.InputField
-              label="Block Time (sec)"
-              min={0}
-              type="number"
-              register={register('blockTime')}
-            />
-            <Form.InputField
-              label="Base Fee (gwei)"
-              min={0}
-              type="number"
-              register={register('blockBaseFeePerGas')}
-            />
-            <Form.InputField
-              label="Gas Price (gwei)"
-              min={0}
-              type="number"
-              register={register('gasPrice')}
-            />
-            <Form.InputField
-              label="Gas Limit"
-              min={0}
-              type="number"
-              register={register('gasLimit')}
-            />
-          </Stack>
+          {type !== 'remote' && (
+            <>
+              <Stack gap="16px">
+                <Text>Configure Fork</Text>
+                <Separator />
+                <Form.InputField
+                  defaultValue="https://cloudflare-eth.com"
+                  label="RPC URL"
+                  register={register('forkUrl')}
+                />
+                <Form.InputField
+                  label="Block Number"
+                  min={1}
+                  type="number"
+                  register={register('forkBlockNumber')}
+                />
+              </Stack>
+              <Stack gap="16px">
+                <Text>Configure Blocks</Text>
+                <Separator />
+                <Form.CheckboxField
+                  label="Auto-mine transactions"
+                  register={register('autoMine')}
+                />
+                <Form.InputField
+                  label="Block Time (sec)"
+                  min={0}
+                  type="number"
+                  register={register('blockTime')}
+                />
+                <Form.InputField
+                  label="Base Fee (gwei)"
+                  min={0}
+                  type="number"
+                  register={register('blockBaseFeePerGas')}
+                />
+                <Form.InputField
+                  label="Gas Price (gwei)"
+                  min={0}
+                  type="number"
+                  register={register('gasPrice')}
+                />
+                <Form.InputField
+                  label="Gas Limit"
+                  min={0}
+                  type="number"
+                  register={register('gasLimit')}
+                />
+              </Stack>
+            </>
+          )}
         </Stack>
       </OnboardingContainer>
     </Form.Root>

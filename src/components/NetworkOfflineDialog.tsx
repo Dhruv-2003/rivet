@@ -45,9 +45,9 @@ export function NetworkOfflineDialog() {
           >
             <Inset horizontal="8px">
               <Stack gap="12px">
-                <Text size="12px">Anvil is disconnected.</Text>
+                <Text size="12px">Network is disconnected.</Text>
                 <Text size="12px">
-                  Once Anvil is reconnected, DevTools will automatically
+                  Once the node is reconnected, DevTools will automatically
                   reconnect.
                 </Text>
               </Stack>

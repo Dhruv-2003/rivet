@@ -12,6 +12,7 @@ import {
   isAddress,
   parseEther,
 } from 'viem'
+import { privateKeyToAccount } from 'viem/accounts'
 
 import {
   Container,
@@ -249,7 +250,7 @@ function AccountRow({ account }: { account: Account }) {
 
 function ImportAccount() {
   const {
-    network: { rpcUrl },
+    network: { rpcUrl, type },
   } = useNetworkStore()
   const client = useClient()
   const { mutateAsync: setAccount } = useSetAccount()
@@ -263,6 +264,43 @@ function ImportAccount() {
 
   const submit = handleSubmit(async ({ addressOrEns }) => {
     reset()
+
+    // Check for Private Key
+    const isPrivateKey =
+      /^0x[a-fA-F0-9]{64}$/.test(addressOrEns) ||
+      /^[a-fA-F0-9]{64}$/.test(addressOrEns)
+
+    if (isPrivateKey) {
+      try {
+        const privateKey = (
+          addressOrEns.startsWith('0x') ? addressOrEns : `0x${addressOrEns}`
+        ) as Hex
+        const account = privateKeyToAccount(privateKey)
+
+        const isAlreadyImported = accounts.some(
+          (acc) => acc.address.toLowerCase() === account.address.toLowerCase(),
+        )
+        if (isAlreadyImported) {
+          toast(`Account "${truncate(account.address)}" is already imported.`)
+          return
+        }
+
+        upsertAccount({
+          account: {
+            address: account.address,
+            key: privateKey,
+            privateKey,
+            state: 'loaded',
+            type: 'local',
+          },
+          key: privateKey,
+        })
+        return
+      } catch {
+        toast.error('Invalid Private Key')
+        return
+      }
+    }
 
     const isAlreadyImported = accounts.some(
       (account) =>
@@ -304,7 +342,7 @@ function ImportAccount() {
         account: {
           address,
           displayName,
-          impersonate: true,
+          impersonate: type === 'anvil',
           rpcUrl,
           type: 'json-rpc',
         },
@@ -323,7 +361,7 @@ function ImportAccount() {
           height="24px"
           hideLabel
           label="Import address"
-          placeholder="Import address or ENS name..."
+          placeholder="Import address, ENS name or Private Key..."
           register={register('addressOrEns', { required: true })}
         />
         <Button height="24px" variant="stroked fill" width="fit" type="submit">
@@ -335,6 +373,7 @@ function ImportAccount() {
 }
 
 function Balance({ address }: { address?: Address }) {
+  const { network } = useNetworkStore()
   const { data: balance, isSuccess } = useBalance({ address })
   const { mutate } = useSetBalance()
 
@@ -343,7 +382,7 @@ function Balance({ address }: { address?: Address }) {
     if (balance) setValue(formatEther(balance))
   }, [balance])
 
-  const disabled = !isSuccess || !address
+  const disabled = !isSuccess || !address || network.type === 'remote'
 
   return (
     <LabelledContent label="Balance (ETH)">
@@ -353,7 +392,7 @@ function Balance({ address }: { address?: Address }) {
           onChange={(e) => setValue(e.target.value)}
           onClick={(e) => e.stopPropagation()}
           onBlur={(e) =>
-            address
+            address && !disabled
               ? mutate({
                   address,
                   value: parseEther(e.target.value as `${number}`),
@@ -361,14 +400,14 @@ function Balance({ address }: { address?: Address }) {
               : undefined
           }
           height="24px"
-          value={disabled ? '' : value}
+          value={value}
         />
       </Bleed>
     </LabelledContent>
   )
 }
-
 function Nonce({ address }: { address?: Address }) {
+  const { network } = useNetworkStore()
   const { data: nonce, isSuccess } = useNonce({ address })
   const { mutate } = useSetNonce()
 
@@ -377,7 +416,7 @@ function Nonce({ address }: { address?: Address }) {
     if (nonce) setValue(nonce?.toString() ?? '0')
   }, [nonce])
 
-  const disabled = !isSuccess || !address
+  const disabled = !isSuccess || !address || network.type === 'remote'
 
   return (
     <LabelledContent label="Nonce">
@@ -386,9 +425,9 @@ function Nonce({ address }: { address?: Address }) {
           disabled={disabled}
           onChange={(e) => setValue(e.target.value)}
           onClick={(e) => e.stopPropagation()}
-          value={disabled ? '' : value}
+          value={value}
           onBlur={(e) =>
-            address
+            address && !disabled
               ? mutate({
                   address,
                   nonce: Number(e.target.value),

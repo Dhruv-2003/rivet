@@ -165,7 +165,7 @@ export function AbiFunctionContent({
       await mutateAsync({
         abi: [abiFunction] as Abi,
         address,
-        account,
+        account: account?.address,
         functionName: abiFunction.name,
         args,
       })

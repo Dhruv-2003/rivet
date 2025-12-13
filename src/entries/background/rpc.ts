@@ -1,11 +1,15 @@
 import {
   type Address,
+  type Hex,
   type RpcTransactionReceipt,
   type RpcTransactionRequest,
+  createWalletClient,
+  http,
   keccak256,
   numberToHex,
   stringToHex,
 } from 'viem'
+import { privateKeyToAccount } from 'viem/accounts'
 import { type HttpRpcClient, getHttpRpcClient } from 'viem/utils'
 
 import {
@@ -35,6 +39,10 @@ export function setupRpcHandler({ messenger }: { messenger: Messenger }) {
       (!meta.sender.frameId || meta.sender.frameId === 0)
 
     const rpcUrl = rpcUrl_ || networkStore.getState().network.rpcUrl
+    const network =
+      networkStore.getState().networks.find((n) => n.rpcUrl === rpcUrl) ||
+      networkStore.getState().network
+    const networkType = network.type || 'anvil'
     const rpcClient = getHttpRpcClient(rpcUrl)
 
     const { getSession } = sessionsStore.getState()
@@ -99,11 +107,15 @@ export function setupRpcHandler({ messenger }: { messenger: Messenger }) {
 
             try {
               const { id, method, params } = pendingRequest
-              const response = await execute(rpcClient, {
-                method,
-                params,
-                id,
-              } as RpcRequest)
+              const response = await execute(
+                rpcClient,
+                {
+                  method,
+                  params,
+                  id,
+                } as RpcRequest,
+                networkType,
+              )
               resolve(response)
             } catch (err) {
               reject(err)
@@ -278,18 +290,71 @@ export function setupRpcHandler({ messenger }: { messenger: Messenger }) {
       }
     }
 
-    return execute(rpcClient, request)
+    return execute(rpcClient, request, networkType)
   })
 }
 
 /////////////////////////////////////////////////////////////////////////////////
 // Utilties
 
-async function execute(rpcClient: HttpRpcClient, request: RpcRequest) {
+async function execute(
+  rpcClient: HttpRpcClient,
+  request: RpcRequest,
+  networkType: 'anvil' | 'remote',
+) {
   // Anvil doesn't support `personal_sign` – use `eth_sign` instead.
-  if (request.method === 'personal_sign') {
+  if (networkType === 'anvil' && request.method === 'personal_sign') {
     request.method = 'eth_sign' as any
     request.params = [request.params[1], request.params[0]]
+  }
+
+  // Handle Local Account Signing
+  if (request.method === 'eth_sendTransaction') {
+    const [txParams] = request.params as [RpcTransactionRequest]
+    const { from } = txParams
+    const { accounts } = accountStore.getState()
+    const account = accounts.find(
+      (acc) => acc.address.toLowerCase() === from.toLowerCase(),
+    )
+
+    if (account && account.type === 'local' && 'privateKey' in account) {
+      try {
+        const { network } = networkStore.getState()
+        const localAccount = privateKeyToAccount(account.privateKey as Hex)
+        const client = createWalletClient({
+          account: localAccount,
+          chain: undefined,
+          transport: http(network.rpcUrl),
+        })
+
+        const hash = await client.sendTransaction({
+          ...txParams,
+          gas: txParams.gas ? BigInt(txParams.gas) : undefined,
+          gasPrice: txParams.gasPrice ? BigInt(txParams.gasPrice) : undefined,
+          value: txParams.value ? BigInt(txParams.value) : undefined,
+          nonce: txParams.nonce ? Number(txParams.nonce) : undefined,
+          maxFeePerGas: txParams.maxFeePerGas
+            ? BigInt(txParams.maxFeePerGas)
+            : undefined,
+          maxPriorityFeePerGas: txParams.maxPriorityFeePerGas
+            ? BigInt(txParams.maxPriorityFeePerGas)
+            : undefined,
+        } as any)
+
+        walletMessenger.send('transactionExecuted', undefined)
+        return {
+          id: request.id,
+          jsonrpc: '2.0',
+          result: hash,
+        } as RpcResponse
+      } catch (error) {
+        return {
+          id: request.id,
+          jsonrpc: '2.0',
+          error: (error as Error).message || 'Transaction failed',
+        } as RpcResponse
+      }
+    }
   }
 
   const response = (await (() => {
@@ -298,6 +363,7 @@ async function execute(rpcClient: HttpRpcClient, request: RpcRequest) {
         ...request.params![0],
         id: request.id,
         rpcClient,
+        networkType,
       } as any)
     }
 
@@ -327,11 +393,13 @@ async function handleSendCalls({
   from,
   id,
   rpcClient,
+  networkType,
 }: {
   calls: RpcTransactionRequest[]
   from: Address
   id: number
   rpcClient: HttpRpcClient
+  networkType: 'anvil' | 'remote'
 }) {
   const { setBatch } = batchCallsStore.getState()
 
@@ -347,20 +415,23 @@ async function handleSendCalls({
   }
 
   // Disable automining (if enabled) to mine transactions atomically.
-  const automine = await rpcClient
-    .request({
-      body: {
-        method: 'anvil_getAutomine',
-      },
-    })
-    .catch(() => {})
-  if (automine?.result)
-    await rpcClient.request({
-      body: {
-        method: 'evm_setAutomine',
-        params: [false],
-      },
-    })
+  let automine
+  if (networkType === 'anvil') {
+    automine = await rpcClient
+      .request({
+        body: {
+          method: 'anvil_getAutomine',
+        },
+      })
+      .catch(() => {})
+    if (automine?.result)
+      await rpcClient.request({
+        body: {
+          method: 'evm_setAutomine',
+          params: [false],
+        },
+      })
+  }
 
   try {
     const transactionHashes = []

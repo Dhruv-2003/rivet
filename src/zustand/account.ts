@@ -1,6 +1,7 @@
 import { uniqBy } from 'remeda'
 import type {
   Address,
+  Hex,
   JsonRpcAccount as JsonRpcAccount_,
   LocalAccount,
 } from 'viem'
@@ -15,7 +16,13 @@ type JsonRpcAccount = JsonRpcAccount_ & {
   rpcUrl: string
   impersonate?: boolean
 }
-export type Account = OneOf<LocalAccount | JsonRpcAccount> & {
+type PrivateKeyAccount = {
+  address: Address
+  privateKey: Hex
+  rpcUrl?: string
+  type: 'local'
+}
+export type Account = OneOf<LocalAccount | JsonRpcAccount | PrivateKeyAccount> & {
   displayName?: string
   key: string
   state: 'loaded' | 'loading'

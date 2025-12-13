@@ -13,6 +13,7 @@ export type Network = {
   chainId: number
   name: string
   rpcUrl: RpcUrl
+  type: 'anvil' | 'remote'
 }
 
 export type NetworkState = {
@@ -40,6 +41,7 @@ export const defaultNetwork = {
   chainId: -1,
   name: '',
   rpcUrl: '',
+  type: 'anvil',
 } satisfies Network
 
 export const networkStore = createStore<NetworkStore>(

@@ -107,9 +107,16 @@ export default function OnboardingStart() {
           </Stack>
         </Row>
         <Row alignVertical="bottom" height="content">
-          <Link to="/onboarding/download" style={{ width: '100%' }}>
-            <Button height="44px">Create Anvil instance</Button>
-          </Link>
+          <Stack gap="12px">
+            <Link to="/onboarding/configure?type=local">
+              <Button height="44px">Create Anvil instance</Button>
+            </Link>
+            <Link to="/onboarding/configure?type=remote">
+              <Button height="44px" variant="stroked fill">
+                Connect to Remote Node
+              </Button>
+            </Link>
+          </Stack>
         </Row>
       </Rows>
     </Inset>

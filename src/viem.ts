@@ -44,12 +44,20 @@ export type Client = Client_Base<
   EIP1474Methods,
   WalletActions &
     PublicActions &
-    TestActions & { mode: 'anvil'; rpcUrl: string }
+    TestActions & { mode: 'anvil' | 'remote'; rpcUrl: string }
 >
 
 const clientCache = new Map()
-export function getClient({ rpcUrl }: { rpcUrl: string }): Client {
-  const cachedClient = clientCache.get(rpcUrl)
+
+export function getClient({
+  rpcUrl,
+  mode = 'anvil',
+}: {
+  rpcUrl: string
+  mode?: 'anvil' | 'remote'
+}): Client {
+  const cacheKey = `${rpcUrl}-${mode}`
+  const cachedClient = clientCache.get(cacheKey)
   if (cachedClient) return cachedClient
 
   const client = createClient({
@@ -63,11 +71,12 @@ export function getClient({ rpcUrl }: { rpcUrl: string }): Client {
       }),
       { retryCount: 0 },
     ),
+    pollingInterval: mode === 'remote' ? 12_000 : 4_000,
   })
-    .extend(() => ({ mode: 'anvil', rpcUrl }))
+    .extend(() => ({ mode, rpcUrl }))
     .extend(testActions({ mode: 'anvil' }))
     .extend(publicActions)
     .extend(walletActions)
-  clientCache.set(rpcUrl, client)
+  clientCache.set(cacheKey, client)
   return client
 }

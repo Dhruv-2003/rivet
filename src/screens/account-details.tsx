@@ -33,6 +33,7 @@ import { useAccountTokens } from '~/hooks/useAccountTokens'
 import { useErc20Balance } from '~/hooks/useErc20Balance'
 import { useErc20Metadata } from '~/hooks/useErc20Metadata'
 import { useSetErc20Balance } from '~/hooks/useSetErc20Balance'
+import { useNetworkStore } from '~/zustand'
 
 export default function AccountDetails() {
   const { address } = useParams()
@@ -300,12 +301,15 @@ function BalanceInput({
 }) {
   // TODO: Handle errors when setting balance.
   const { mutate, isPending } = useSetErc20Balance()
+  const { network } = useNetworkStore()
 
   const [value, setValue] = useState(formatUnits(balance, decimals))
 
   useEffect(() => {
     setValue(formatUnits(balance, decimals))
   }, [balance, decimals])
+
+  const disabled = network.type === 'remote'
 
   return (
     <Box>
@@ -317,6 +321,7 @@ function BalanceInput({
         )}
         <Column alignHorizontal="right" width="4/5">
           <Input
+            disabled={disabled}
             onChange={(e) => setValue(e.target.value)}
             onClick={(e) => e.stopPropagation()}
             onBlur={(e) => {
@@ -334,7 +339,7 @@ function BalanceInput({
             }}
             height="24px"
             style={{ maxWidth: '180px', textAlign: 'right' }}
-            value={value}
+            value={disabled ? '' : value}
           />
         </Column>
       </Columns>
