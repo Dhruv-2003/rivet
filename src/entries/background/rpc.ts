@@ -142,9 +142,11 @@ export function setupRpcHandler({ messenger }: { messenger: Messenger }) {
           const addresses = accounts.map((x) => x.address) as Address[]
 
           addSession({ session: { host } })
-          inpageMessenger.send('connect', {
-            chainId: numberToHex(network.chainId),
-          })
+          if (network.chainId !== -1) {
+            inpageMessenger.send('connect', {
+              chainId: numberToHex(network.chainId),
+            })
+          }
 
           return {
             id: request.id,
@@ -262,6 +264,7 @@ export function setupRpcHandler({ messenger }: { messenger: Messenger }) {
           id: request.id,
           jsonrpc: '2.0',
           result: networks.reduce((capabilities, network) => {
+            if (network.chainId === -1) return capabilities
             return {
               ...capabilities,
               [numberToHex(network.chainId)]: {

@@ -128,6 +128,7 @@ export const accountStore = createStore<AccountStore>(
 
         return {
           ...state,
+          ...(!state.account && { account }),
           ...(key === state.account?.key && {
             account,
           }),

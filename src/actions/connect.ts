@@ -11,5 +11,7 @@ export async function connect({
   const { addSession } = sessionsStore.getState()
   addSession({ session: { host } })
 
-  await messenger.send('connect', { chainId: numberToHex(network.chainId) })
+  if (network.chainId !== -1) {
+    await messenger.send('connect', { chainId: numberToHex(network.chainId) })
+  }
 }
