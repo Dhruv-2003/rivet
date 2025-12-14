@@ -61,7 +61,9 @@ export const accountStore = createStore<AccountStore>(
         accounts_ = [
           ...(account ? [account] : []),
           ...accounts.filter((x) =>
-            account ? x.address !== account.address : true,
+            account
+              ? x.address.toLowerCase() !== account.address.toLowerCase()
+              : true,
           ),
         ]
       return accounts_

@@ -324,24 +324,36 @@ async function execute(
       try {
         const { network } = networkStore.getState()
         const localAccount = privateKeyToAccount(account.privateKey as Hex)
+        // TODO: The chain info should be fetched from the network config, this fixed won't work for CGT networks
         const client = createWalletClient({
           account: localAccount,
-          chain: undefined,
+          chain: {
+            id: network.chainId,
+            name: 'Local',
+            nativeCurrency: { decimals: 18, name: 'Ether', symbol: 'ETH' },
+            rpcUrls: { default: { http: [network.rpcUrl] } },
+          },
           transport: http(network.rpcUrl),
         })
 
         const hash = await client.sendTransaction({
-          ...txParams,
+          to: txParams.to,
+          data: txParams.data,
           gas: txParams.gas ? BigInt(txParams.gas) : undefined,
-          gasPrice: txParams.gasPrice ? BigInt(txParams.gasPrice) : undefined,
           value: txParams.value ? BigInt(txParams.value) : undefined,
           nonce: txParams.nonce ? Number(txParams.nonce) : undefined,
-          maxFeePerGas: txParams.maxFeePerGas
-            ? BigInt(txParams.maxFeePerGas)
-            : undefined,
-          maxPriorityFeePerGas: txParams.maxPriorityFeePerGas
-            ? BigInt(txParams.maxPriorityFeePerGas)
-            : undefined,
+          ...(txParams.maxFeePerGas
+            ? {
+                maxFeePerGas: BigInt(txParams.maxFeePerGas),
+                maxPriorityFeePerGas: txParams.maxPriorityFeePerGas
+                  ? BigInt(txParams.maxPriorityFeePerGas)
+                  : undefined,
+              }
+            : {
+                gasPrice: txParams.gasPrice
+                  ? BigInt(txParams.gasPrice)
+                  : undefined,
+              }),
         } as any)
 
         walletMessenger.send('transactionExecuted', undefined)
@@ -480,4 +492,11 @@ async function handleSendCalls({
         },
       })
   }
+}
+
+export function setupPendingRequestCleanup() {
+  walletMessenger.reply('pendingRequest', async ({ request }) => {
+    const { removePendingRequest } = pendingRequestsStore.getState()
+    removePendingRequest(request.id)
+  })
 }

@@ -8,9 +8,10 @@
   },
   "scripts": {
     "anvil": "anvil --fork-url https://cloudflare-eth.com",
-    "build": "tsc && bun run build:ds && vite build && bun run build:inpage",
+    "build": "tsc && bun run build:ds && vite build && bun run build:inpage && bun run build:content && bun run scripts/patch-manifest.ts",
     "build:ds": "vite build -c src/design-system/vite.config.ts",
     "build:inpage": "vite build -c vite.config.inpage.ts",
+    "build:content": "vite build -c vite.config.content.ts",
     "clean": "rimraf dist",
     "chrome": "web-ext run -t chromium --start-url \"http://localhost:5173\" --source-dir ./dist/dev",
     "contracts:build": "forge build --config-path test/contracts/foundry.toml && bun scripts/generate-typed-artifacts.ts",

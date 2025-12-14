@@ -33,12 +33,16 @@ import { useAccountTokens } from '~/hooks/useAccountTokens'
 import { useErc20Balance } from '~/hooks/useErc20Balance'
 import { useErc20Metadata } from '~/hooks/useErc20Metadata'
 import { useSetErc20Balance } from '~/hooks/useSetErc20Balance'
-import { useNetworkStore } from '~/zustand'
+import { useAccountStore, useNetworkStore } from '~/zustand'
 
 export default function AccountDetails() {
   const { address } = useParams()
   const [params, setParams] = useSearchParams({ tab: 'tokens' })
   const navigate = useNavigate()
+  const { accounts } = useAccountStore()
+
+  const account = accounts.find((x) => x.address === address)
+  const privateKey = account?.type === 'local' ? account.privateKey : undefined
 
   if (!address) return null
   return (
@@ -58,6 +62,20 @@ export default function AccountDetails() {
                 <Text size="11px">{address}</Text>
               </LabelledContent>
             </Box>
+            {privateKey && (
+              <Box style={{ marginLeft: 'auto' }}>
+                <Button.Symbol
+                  label="Export Private Key"
+                  symbol="doc.on.doc"
+                  height="24px"
+                  variant="ghost primary"
+                  onClick={() => {
+                    navigator.clipboard.writeText(privateKey)
+                    toast.success('Copied Private Key')
+                  }}
+                />
+              </Box>
+            )}
           </Inline>
         </Inset>
       </Box>
@@ -339,7 +357,7 @@ function BalanceInput({
             }}
             height="24px"
             style={{ maxWidth: '180px', textAlign: 'right' }}
-            value={disabled ? '' : value}
+            value={value}
           />
         </Column>
       </Columns>

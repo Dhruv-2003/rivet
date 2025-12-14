@@ -12,7 +12,7 @@ import {
   isAddress,
   parseEther,
 } from 'viem'
-import { privateKeyToAccount } from 'viem/accounts'
+import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
 
 import {
   Container,
@@ -208,18 +208,16 @@ function AccountRow({ account }: { account: Account }) {
       {account.state === 'loaded' && (
         <Box position="absolute" style={{ bottom: '12px', right: '12px' }}>
           <Inline gap="4px" wrap={false}>
-            {account.impersonate && (
-              <Button.Symbol
-                label="Remove"
-                symbol="trash"
-                height="24px"
-                variant="stroked red"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  removeAccount({ account })
-                }}
-              />
-            )}
+            <Button.Symbol
+              label="Remove"
+              symbol="trash"
+              height="24px"
+              variant="stroked red"
+              onClick={(e) => {
+                e.stopPropagation()
+                removeAccount({ account })
+              }}
+            />
             {!active && (
               <Button.Symbol
                 label="Switch Account"
@@ -354,6 +352,22 @@ function ImportAccount() {
     }
   })
 
+  const createAccount = () => {
+    const privateKey = generatePrivateKey()
+    const account = privateKeyToAccount(privateKey)
+    upsertAccount({
+      account: {
+        address: account.address,
+        key: privateKey,
+        privateKey,
+        state: 'loaded',
+        type: 'local',
+      },
+      key: privateKey,
+    })
+    toast(`Created account "${truncate(account.address)}"`)
+  }
+
   return (
     <Form.Root onSubmit={submit} style={{ width: '100%' }}>
       <Inline gap="4px" wrap={false}>
@@ -366,6 +380,17 @@ function ImportAccount() {
         />
         <Button height="24px" variant="stroked fill" width="fit" type="submit">
           Import
+        </Button>
+        <Button
+          height="24px"
+          variant="stroked fill"
+          width="fit"
+          onClick={(e) => {
+            e.preventDefault()
+            createAccount()
+          }}
+        >
+          Create
         </Button>
       </Inline>
     </Form.Root>

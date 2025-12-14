@@ -17,14 +17,6 @@ export const getManifest = ({ dev }: { dev?: boolean }) =>
     background: {
       service_worker: 'src/entries/background/index.ts',
     },
-    content_scripts: [
-      {
-        matches: ['*://*/*'],
-        js: ['src/entries/content/index.ts'],
-        run_at: 'document_start',
-        all_frames: true,
-      },
-    ],
     side_panel: {
       default_path: 'src/entries/iframe/index.html',
     },
@@ -53,6 +45,10 @@ export const getManifest = ({ dev }: { dev?: boolean }) =>
       },
       {
         resources: ['inpage.js'],
+        matches: ['*://*/*'],
+      },
+      {
+        resources: ['assets/*'],
         matches: ['*://*/*'],
       },
     ],
