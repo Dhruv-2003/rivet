@@ -6,7 +6,7 @@ export function useAccounts() {
   const { network } = useNetworkStore()
 
   return useMemo(
-    () => getAccounts({ rpcUrl: network.rpcUrl }),
+    () => getAccounts({ activeFirst: true, rpcUrl: network.rpcUrl }),
     [accounts, network.rpcUrl],
   )
 }

@@ -212,7 +212,7 @@ function NetworkChangedEmitter() {
 
   const prevNetwork = useRef<NetworkState['network']>()
   useEffect(() => {
-    if (!network.chainId) return
+    if (!network.chainId || network.chainId === -1) return
 
     if (prevNetwork.current && prevNetwork.current.chainId !== network.chainId)
       inpageMessenger.send('chainChanged', {

@@ -23,9 +23,14 @@ export default function Network() {
   type FormValues = {
     name: string
     rpcUrl: string
+    type: 'anvil' | 'remote'
   }
   const { register, handleSubmit, watch } = useForm<FormValues>({
-    defaultValues: { name: network?.name || '', rpcUrl: network?.rpcUrl || '' },
+    defaultValues: {
+      name: network?.name || '',
+      rpcUrl: network?.rpcUrl || '',
+      type: network?.type || 'anvil',
+    },
   })
 
   const debouncedRpcUrl = useDebounce(watch('rpcUrl'), 300)
@@ -38,8 +43,11 @@ export default function Network() {
     },
   })
 
-  const onSubmit = handleSubmit(async ({ name, rpcUrl }) => {
-    await upsertNetwork({ rpcUrl: network?.rpcUrl, network: { name, rpcUrl } })
+  const onSubmit = handleSubmit(async ({ name, rpcUrl, type }) => {
+    await upsertNetwork({
+      rpcUrl: network?.rpcUrl,
+      network: { name, rpcUrl, type },
+    })
     navigate(-1)
   })
 
@@ -76,6 +84,10 @@ export default function Network() {
             placeholder="Ethereum"
             register={register('name')}
           />
+          <Form.SelectField label="Type" register={register('type')}>
+            <option value="anvil">Anvil</option>
+            <option value="remote">Remote</option>
+          </Form.SelectField>
         </Stack>
       </Container>
     </Form.Root>

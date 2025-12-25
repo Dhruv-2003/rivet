@@ -30,8 +30,10 @@ import {
   TabsList,
   Tooltip,
 } from '~/components'
+import { AssetChanges } from '~/components/AssetChanges'
 import { FormattedAbiFunctionName } from '~/components/abi/FormattedAbiFunctionName'
 import * as Form from '~/components/form'
+import { Spinner } from '~/components/svgs'
 import {
   Bleed,
   Box,
@@ -50,6 +52,7 @@ import {
   usePrepareTransactionRequest,
   usePrepareTransactionRequests,
 } from '~/hooks/usePrepareTransactionRequest'
+import { useSimulateCalls } from '~/hooks/useSimulateCalls'
 import { getMessenger } from '~/messengers'
 import { useAccountStore, usePendingRequestsStore } from '~/zustand'
 import type { PendingRequest } from '~/zustand/pending-requests'
@@ -147,6 +150,23 @@ function SendCallsRequest(args: {
   const isFetched = preparedCallQueries.every((query) => query.isFetched)
   const error = preparedCallQueries.find((query) => query.error)?.error
 
+  const simulationCalls = preparedCallQueries.map((query) => {
+    const call = query.data
+    return {
+      to: call?.to || undefined,
+      data: call?.data,
+      value: call?.value,
+    }
+  })
+
+  const { data: simulationData, isLoading: isSimulationLoading } =
+    useSimulateCalls({
+      account: from,
+      calls: simulationCalls,
+    })
+
+  const [tab, setTab] = useState('calls')
+
   const handleApprove = async () => {
     const serializedCalls = preparedCallQueries.map((query) =>
       formatTransactionRequest(query.data!),
@@ -233,13 +253,14 @@ function SendCallsRequest(args: {
             </LabelledContent>
           </Column>
         </Columns>
-        <Tabs.Root asChild value="calls">
+        <Tabs.Root asChild value={tab}>
           <Box display="flex" flexDirection="column" height="full">
             <TabsList
               items={[
                 { label: 'Calls', value: 'calls' },
-                { label: 'Trace', value: 'trace' },
+                { label: 'Simulation', value: 'simulation' },
               ]}
+              onSelect={(item) => setTab(item.value)}
             />
             <Inset vertical="0px">
               <TabsContent inset={false} scrollable={false} value="calls">
@@ -388,6 +409,15 @@ function SendCallsRequest(args: {
                   </Accordion.Root>
                 </Bleed>
               </TabsContent>
+              <TabsContent inset={false} value="simulation">
+                {isSimulationLoading ? (
+                  <Box display="flex" justifyContent="center" padding="20px">
+                    <Spinner size="24px" />
+                  </Box>
+                ) : (
+                  <AssetChanges changes={simulationData?.assetChanges} />
+                )}
+              </TabsContent>
             </Inset>
           </Box>
         </Tabs.Root>
@@ -430,6 +460,18 @@ function SendTransactionRequest(args: {
     gas,
     data,
   } = request
+
+  const { data: simulationData, isLoading: isSimulationLoading } =
+    useSimulateCalls({
+      account: from,
+      calls: [
+        {
+          to: to ?? undefined,
+          data,
+          value,
+        },
+      ],
+    })
 
   ////////////////////////////////////////////////////////////////////////
 
@@ -492,6 +534,16 @@ function SendTransactionRequest(args: {
       onReject={handleReject}
     >
       <Stack gap="20px">
+        {isLoading && (
+          <Box
+            display="flex"
+            alignItems="center"
+            justifyContent="center"
+            padding="20px"
+          >
+            <Spinner size="24px" />
+          </Box>
+        )}
         {error && (
           <Box backgroundColor="surface/yellowTint" padding="8px">
             <Stack gap="12px">
@@ -566,9 +618,15 @@ function SendTransactionRequest(args: {
                 </UpdateValuePopover>
               }
             >
-              <Tooltip label={to}>
-                <Text.Truncated size="12px">{to}</Text.Truncated>
-              </Tooltip>
+              {to ? (
+                <Tooltip label={to}>
+                  <Text.Truncated size="12px">{to}</Text.Truncated>
+                </Tooltip>
+              ) : (
+                <Text color="text/tertiary" size="12px">
+                  Contract Deployment
+                </Text>
+              )}
             </LabelledContent>
           </Column>
           <Column width="1/3">
@@ -745,7 +803,7 @@ function SendTransactionRequest(args: {
             <TabsList
               items={[
                 { label: 'Data', value: 'data' },
-                { label: 'Trace', value: 'trace' },
+                { label: 'Simulation', value: 'simulation' },
               ]}
               onSelect={(item) => {
                 setTab(item.value)
@@ -778,8 +836,14 @@ function SendTransactionRequest(args: {
                   />
                 </Box>
               </TabsContent>
-              <TabsContent inset={false} value="state">
-                {''}
+              <TabsContent inset={false} value="simulation">
+                {isSimulationLoading ? (
+                  <Box display="flex" justifyContent="center" padding="20px">
+                    <Spinner size="24px" />
+                  </Box>
+                ) : (
+                  <AssetChanges changes={simulationData?.assetChanges} />
+                )}
               </TabsContent>
             </Inset>
           </Box>

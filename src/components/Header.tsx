@@ -361,6 +361,14 @@ function MiningStatus() {
   const { data: block } = usePendingBlock()
   const { data: automining } = useGetAutomine()
   const { network } = useNetworkStore()
+
+  if (network.type === 'remote')
+    return (
+      <HeaderItem label="Mining Status">
+        <Text size="12px">Remote</Text>
+      </HeaderItem>
+    )
+
   return (
     <HeaderItem label="Mining Status">
       <Text size="12px">
@@ -397,8 +405,11 @@ function BaseFee() {
 }
 
 function MineButton() {
+  const { network } = useNetworkStore()
   const { data: block } = usePendingBlock()
   const { mutateAsync: mine } = useMine()
+
+  if (network.type === 'remote') return null
 
   return (
     <Box key={block?.number?.toString()} style={{ marginTop: '14px' }}>
@@ -418,7 +429,10 @@ function MineButton() {
 }
 
 function RevertButton({ snapshot }: { snapshot?: Hex }) {
+  const { network } = useNetworkStore()
   const { mutateAsync: revert } = useRevert()
+
+  if (network.type === 'remote') return null
 
   return (
     <Box key={snapshot} style={{ marginTop: '14px' }}>

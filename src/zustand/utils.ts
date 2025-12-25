@@ -57,6 +57,18 @@ export function createStore<TState>(
   )
 }
 
+export async function waitForHydration(store: any) {
+  if (!store.persist || !store.persist.hasHydrated) return
+  if (store.persist.hasHydrated()) return
+
+  await new Promise<void>((resolve) => {
+    const unsub = store.persist.onFinishHydration(() => {
+      unsub()
+      resolve()
+    })
+  })
+}
+
 async function syncStore({ store }: { store: StoreWithPersist<unknown> }) {
   if (!store.persist) return
 

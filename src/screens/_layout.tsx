@@ -33,6 +33,7 @@ export default function Layout() {
 
   const showNetworkOfflineDialog =
     isNetworkOffline &&
+    network.type !== 'remote' &&
     !networkOfflineBypassPaths.some((path) => location.pathname.includes(path))
 
   return (

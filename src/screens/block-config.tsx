@@ -3,7 +3,7 @@ import { useForm } from 'react-hook-form'
 
 import { Container } from '~/components'
 import * as Form from '~/components/form'
-import { Button, Inline, Separator, Stack, Text } from '~/design-system'
+import { Box, Button, Inline, Separator, Stack, Text } from '~/design-system'
 import { useClient } from '~/hooks/useClient'
 import { useGetAutomine } from '~/hooks/useGetAutomine'
 import { useMine } from '~/hooks/useMine'
@@ -15,8 +15,28 @@ import { useNetworkStore } from '~/zustand'
 import OnboardingStart from './onboarding/start'
 
 export default function Block() {
-  const { onboarded } = useNetworkStore()
+  const { onboarded, network } = useNetworkStore()
   if (!onboarded) return <OnboardingStart />
+
+  if (network.type === 'remote') {
+    return (
+      <Container dismissable fit header="Block Configuration">
+        <Box
+          display="flex"
+          flexDirection="column"
+          gap="16px"
+          alignItems="center"
+          justifyContent="center"
+          style={{ height: '100%', padding: '20px' }}
+        >
+          <Text color="text/tertiary">
+            Block configuration is not available for remote networks.
+          </Text>
+        </Box>
+      </Container>
+    )
+  }
+
   return (
     <>
       <Container dismissable fit header="Block Configuration">

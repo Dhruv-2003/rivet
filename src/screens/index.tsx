@@ -12,6 +12,7 @@ import {
   isAddress,
   parseEther,
 } from 'viem'
+import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
 
 import {
   Container,
@@ -132,8 +133,13 @@ function Accounts() {
 function AccountRow({ account }: { account: Account }) {
   const { account: activeAccount, removeAccount } = useAccountStore()
   const { mutateAsync: setAccount } = useSetAccount()
+  const { network } = useNetworkStore()
 
   const active = activeAccount?.address === account.address
+  const isWatchOnly =
+    account.type === 'json-rpc' &&
+    (network.type === 'remote' || !account.impersonate)
+
   return (
     <Box
       backgroundColor={active ? 'surface/fill/tertiary' : undefined}
@@ -183,6 +189,16 @@ function AccountRow({ account }: { account: Account }) {
                     : account.address}
                 </Text>
               </Tooltip>
+              {isWatchOnly && (
+                <Tooltip label="Watch-only account">
+                  <SFSymbol
+                    color="text/tertiary"
+                    size="12px"
+                    symbol="eye"
+                    weight="medium"
+                  />
+                </Tooltip>
+              )}
               {account.address && (
                 <Box position="absolute" style={{ right: -24, top: -6 }}>
                   <Button.Copy
@@ -207,18 +223,16 @@ function AccountRow({ account }: { account: Account }) {
       {account.state === 'loaded' && (
         <Box position="absolute" style={{ bottom: '12px', right: '12px' }}>
           <Inline gap="4px" wrap={false}>
-            {account.impersonate && (
-              <Button.Symbol
-                label="Remove"
-                symbol="trash"
-                height="24px"
-                variant="stroked red"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  removeAccount({ account })
-                }}
-              />
-            )}
+            <Button.Symbol
+              label="Remove"
+              symbol="trash"
+              height="24px"
+              variant="stroked red"
+              onClick={(e) => {
+                e.stopPropagation()
+                removeAccount({ account })
+              }}
+            />
             {!active && (
               <Button.Symbol
                 label="Switch Account"
@@ -249,7 +263,7 @@ function AccountRow({ account }: { account: Account }) {
 
 function ImportAccount() {
   const {
-    network: { rpcUrl },
+    network: { rpcUrl, type },
   } = useNetworkStore()
   const client = useClient()
   const { mutateAsync: setAccount } = useSetAccount()
@@ -263,6 +277,43 @@ function ImportAccount() {
 
   const submit = handleSubmit(async ({ addressOrEns }) => {
     reset()
+
+    // Check for Private Key
+    const isPrivateKey =
+      /^0x[a-fA-F0-9]{64}$/.test(addressOrEns) ||
+      /^[a-fA-F0-9]{64}$/.test(addressOrEns)
+
+    if (isPrivateKey) {
+      try {
+        const privateKey = (
+          addressOrEns.startsWith('0x') ? addressOrEns : `0x${addressOrEns}`
+        ) as Hex
+        const account = privateKeyToAccount(privateKey)
+
+        const isAlreadyImported = accounts.some(
+          (acc) => acc.address.toLowerCase() === account.address.toLowerCase(),
+        )
+        if (isAlreadyImported) {
+          toast(`Account "${truncate(account.address)}" is already imported.`)
+          return
+        }
+
+        upsertAccount({
+          account: {
+            address: account.address,
+            key: privateKey,
+            privateKey,
+            state: 'loaded',
+            type: 'local',
+          },
+          key: privateKey,
+        })
+        return
+      } catch {
+        toast.error('Invalid Private Key')
+        return
+      }
+    }
 
     const isAlreadyImported = accounts.some(
       (account) =>
@@ -304,7 +355,8 @@ function ImportAccount() {
         account: {
           address,
           displayName,
-          impersonate: true,
+          impersonate: type === 'anvil',
+          imported: true,
           rpcUrl,
           type: 'json-rpc',
         },
@@ -316,6 +368,22 @@ function ImportAccount() {
     }
   })
 
+  const createAccount = () => {
+    const privateKey = generatePrivateKey()
+    const account = privateKeyToAccount(privateKey)
+    upsertAccount({
+      account: {
+        address: account.address,
+        key: privateKey,
+        privateKey,
+        state: 'loaded',
+        type: 'local',
+      },
+      key: privateKey,
+    })
+    toast(`Created account "${truncate(account.address)}"`)
+  }
+
   return (
     <Form.Root onSubmit={submit} style={{ width: '100%' }}>
       <Inline gap="4px" wrap={false}>
@@ -323,11 +391,22 @@ function ImportAccount() {
           height="24px"
           hideLabel
           label="Import address"
-          placeholder="Import address or ENS name..."
+          placeholder="Import address, ENS name or Private Key..."
           register={register('addressOrEns', { required: true })}
         />
         <Button height="24px" variant="stroked fill" width="fit" type="submit">
           Import
+        </Button>
+        <Button
+          height="24px"
+          variant="stroked fill"
+          width="fit"
+          onClick={(e) => {
+            e.preventDefault()
+            createAccount()
+          }}
+        >
+          Create
         </Button>
       </Inline>
     </Form.Root>
@@ -335,6 +414,7 @@ function ImportAccount() {
 }
 
 function Balance({ address }: { address?: Address }) {
+  const { network } = useNetworkStore()
   const { data: balance, isSuccess } = useBalance({ address })
   const { mutate } = useSetBalance()
 
@@ -343,7 +423,7 @@ function Balance({ address }: { address?: Address }) {
     if (balance) setValue(formatEther(balance))
   }, [balance])
 
-  const disabled = !isSuccess || !address
+  const disabled = !isSuccess || !address || network.type === 'remote'
 
   return (
     <LabelledContent label="Balance (ETH)">
@@ -353,7 +433,7 @@ function Balance({ address }: { address?: Address }) {
           onChange={(e) => setValue(e.target.value)}
           onClick={(e) => e.stopPropagation()}
           onBlur={(e) =>
-            address
+            address && !disabled
               ? mutate({
                   address,
                   value: parseEther(e.target.value as `${number}`),
@@ -361,14 +441,14 @@ function Balance({ address }: { address?: Address }) {
               : undefined
           }
           height="24px"
-          value={disabled ? '' : value}
+          value={value}
         />
       </Bleed>
     </LabelledContent>
   )
 }
-
 function Nonce({ address }: { address?: Address }) {
+  const { network } = useNetworkStore()
   const { data: nonce, isSuccess } = useNonce({ address })
   const { mutate } = useSetNonce()
 
@@ -377,7 +457,7 @@ function Nonce({ address }: { address?: Address }) {
     if (nonce) setValue(nonce?.toString() ?? '0')
   }, [nonce])
 
-  const disabled = !isSuccess || !address
+  const disabled = !isSuccess || !address || network.type === 'remote'
 
   return (
     <LabelledContent label="Nonce">
@@ -386,9 +466,9 @@ function Nonce({ address }: { address?: Address }) {
           disabled={disabled}
           onChange={(e) => setValue(e.target.value)}
           onClick={(e) => e.stopPropagation()}
-          value={disabled ? '' : value}
+          value={value}
           onBlur={(e) =>
-            address
+            address && !disabled
               ? mutate({
                   address,
                   nonce: Number(e.target.value),

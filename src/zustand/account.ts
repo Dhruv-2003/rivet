@@ -1,6 +1,7 @@
 import { uniqBy } from 'remeda'
 import type {
   Address,
+  Hex,
   JsonRpcAccount as JsonRpcAccount_,
   LocalAccount,
 } from 'viem'
@@ -14,8 +15,17 @@ import { createStore } from './utils'
 type JsonRpcAccount = JsonRpcAccount_ & {
   rpcUrl: string
   impersonate?: boolean
+  imported?: boolean
 }
-export type Account = OneOf<LocalAccount | JsonRpcAccount> & {
+type PrivateKeyAccount = {
+  address: Address
+  privateKey: Hex
+  rpcUrl?: string
+  type: 'local'
+}
+export type Account = OneOf<
+  LocalAccount | JsonRpcAccount | PrivateKeyAccount
+> & {
   displayName?: string
   key: string
   state: 'loaded' | 'loading'
@@ -52,7 +62,9 @@ export const accountStore = createStore<AccountStore>(
         accounts_ = [
           ...(account ? [account] : []),
           ...accounts.filter((x) =>
-            account ? x.address !== account.address : true,
+            account
+              ? x.address.toLowerCase() !== account.address.toLowerCase()
+              : true,
           ),
         ]
       return accounts_
@@ -87,7 +99,7 @@ export const accountStore = createStore<AccountStore>(
           account: get().account || accounts[0],
           accounts: [
             ...state.accounts.filter(
-              (x) => x.rpcUrl !== rpcUrl || x.impersonate,
+              (x) => x.rpcUrl !== rpcUrl || x.impersonate || x.imported,
             ),
             ...accounts,
           ],
@@ -119,6 +131,7 @@ export const accountStore = createStore<AccountStore>(
 
         return {
           ...state,
+          ...(!state.account && { account }),
           ...(key === state.account?.key && {
             account,
           }),

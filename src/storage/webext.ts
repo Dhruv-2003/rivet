@@ -30,6 +30,41 @@ const noopStorage: (typeof chrome.storage)['local'] = {
   },
 }
 
+function createBrowserStorage(type: 'local' | 'session') {
+  const store =
+    typeof window !== 'undefined' ? window[`${type}Storage`] : undefined
+  if (!store) return noopStorage
+
+  return {
+    ...noopStorage,
+    get: (key: string) => {
+      const rawValue = store.getItem(key)
+      let parsedValue: unknown = rawValue
+      if (rawValue !== null) {
+        try {
+          parsedValue = JSON.parse(rawValue, reviver)
+        } catch {
+          // If the value is not valid JSON, fall back to the raw string
+          parsedValue = rawValue
+        }
+      }
+      return Promise.resolve({ [key]: parsedValue })
+    },
+    set: (items: Record<string, any>) => {
+      Object.entries(items).forEach(([k, v]) => store.setItem(k, v))
+      return Promise.resolve()
+    },
+    remove: (key: string) => {
+      store.removeItem(key)
+      return Promise.resolve()
+    },
+    clear: () => {
+      store.clear()
+      return Promise.resolve()
+    },
+  } as unknown as (typeof chrome.storage)['local']
+}
+
 /**
  * Async web extension storage.
  *
@@ -44,7 +79,9 @@ function createWebextStorage({
   key: prefixKey = 'wagmi.wallet',
   type,
 }: { key?: string; type: 'session' | 'local' }): WebextStorage {
-  const storage = chrome.storage ? chrome.storage[type] : noopStorage
+  const storage = chrome.storage
+    ? chrome.storage[type]
+    : createBrowserStorage(type)
 
   const getKey = (key: string) => `${prefixKey}.${key}`
 
