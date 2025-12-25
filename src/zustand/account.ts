@@ -15,6 +15,7 @@ import { createStore } from './utils'
 type JsonRpcAccount = JsonRpcAccount_ & {
   rpcUrl: string
   impersonate?: boolean
+  imported?: boolean
 }
 type PrivateKeyAccount = {
   address: Address
@@ -98,7 +99,7 @@ export const accountStore = createStore<AccountStore>(
           account: get().account || accounts[0],
           accounts: [
             ...state.accounts.filter(
-              (x) => x.rpcUrl !== rpcUrl || x.impersonate,
+              (x) => x.rpcUrl !== rpcUrl || x.impersonate || x.imported,
             ),
             ...accounts,
           ],

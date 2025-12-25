@@ -5,6 +5,7 @@ import {
   type RpcTransactionReceipt,
   type RpcTransactionRequest,
   createWalletClient,
+  isAddress,
   keccak256,
   numberToHex,
   stringToHex,
@@ -26,7 +27,10 @@ import {
   pendingRequestsStore,
   sessionsStore,
   settingsStore,
+  tokensStore,
+  transactionStore,
 } from '~/zustand'
+import { waitForHydration } from '~/zustand/utils'
 
 const inpageMessenger = getMessenger('background:inpage')
 const walletMessenger = getMessenger('background:wallet')
@@ -70,6 +74,38 @@ export function setupRpcHandler({ messenger }: { messenger: Messenger }) {
       (request.method === 'personal_sign' && !bypassSignatureAuth) ||
       (request.method === 'wallet_sendCalls' && !bypassTransactionAuth)
     ) {
+      // Check if the account can sign.
+      let from: Address | undefined
+      if (request.method === 'eth_sendTransaction') {
+        from = (request.params as [RpcTransactionRequest])[0].from
+      } else if (request.method === 'personal_sign') {
+        const [param1, param2] = request.params as [Hex, Hex]
+        from = isAddress(param1) ? param1 : (param2 as Address)
+      } else if (request.method === 'eth_signTypedData_v4') {
+        from = (request.params as [Address, string])[0]
+      }
+
+      if (from) {
+        const { accounts } = accountStore.getState()
+        const account = accounts.find(
+          (acc) => acc.address.toLowerCase() === from!.toLowerCase(),
+        )
+        if (
+          account?.type === 'json-rpc' &&
+          (networkType === 'remote' || !account.impersonate)
+        ) {
+          return {
+            id: request.id,
+            jsonrpc: '2.0',
+            error: {
+              code: -32603,
+              message:
+                'Account cannot sign. It is a watch-only account or impersonation is not supported on this network.',
+            },
+          } as RpcResponse
+        }
+      }
+
       const { addPendingRequest, removePendingRequest } =
         pendingRequestsStore.getState()
 
@@ -291,6 +327,99 @@ export function setupRpcHandler({ messenger }: { messenger: Messenger }) {
           result: undefined,
         } as RpcResponse
       }
+
+      if (request.method === 'wallet_watchAsset') {
+          const {
+            type,
+            options: { address },
+          } = request.params as any
+
+          if (type === 'ERC20') {
+            const { account } = accountStore.getState()
+            const { network } = networkStore.getState()
+            if (account && network) {
+              tokensStore.getState().addToken(
+                {
+                  accountAddress: account.address,
+                  rpcUrl: network.rpcUrl,
+                },
+                { tokenAddress: address },
+              )
+            }
+          }
+
+          return {
+            id: request.id,
+            jsonrpc: '2.0',
+            result: true,
+          } as RpcResponse
+      }
+
+  
+      if (request.method === 'wallet_switchEthereumChain') {
+        const [{ chainId }] = request.params as [{ chainId: Hex }]
+        const { networks, switchNetwork } = networkStore.getState()
+        const network = networks.find(
+          (n) => n.chainId === parseInt(chainId, 16),
+        )
+
+        if (!network) {
+          return {
+            id: request.id,
+            jsonrpc: '2.0',
+            error: {
+              code: 4902,
+              message: 'Unrecognized chain ID',
+            },
+          } as RpcResponse
+        }
+
+        switchNetwork(network.rpcUrl)
+        inpageMessenger.send('chainChanged', { chainId, sessions: [session!] })
+
+        return {
+          id: request.id,
+          jsonrpc: '2.0',
+          result: null,
+        } as RpcResponse
+      }
+
+      if (request.method === 'wallet_addEthereumChain') {
+        const [chain] = request.params as [
+          {
+            chainId: Hex
+            chainName: string
+            rpcUrls: string[]
+            nativeCurrency?: {
+              name: string
+              symbol: string
+              decimals: number
+            }
+            blockExplorerUrls?: string[]
+          },
+        ]
+
+        const { upsertNetwork, switchNetwork } = networkStore.getState()
+        const rpcUrl = chain.rpcUrls[0]
+
+        await upsertNetwork({
+          network: {
+            chainId: parseInt(chain.chainId, 16),
+            name: chain.chainName,
+            rpcUrl,
+            type: 'remote',
+          },
+          rpcUrl,
+        })
+        switchNetwork(rpcUrl)
+        inpageMessenger.send('chainChanged', { chainId: chain.chainId , sessions: [session!]})
+
+        return {
+          id: request.id,
+          jsonrpc: '2.0',
+          result: null,
+        } as RpcResponse
+      }
     }
 
     return execute(rpcClient, request, networkType)
@@ -305,6 +434,12 @@ async function execute(
   request: RpcRequest,
   networkType: 'anvil' | 'remote',
 ) {
+  await Promise.all([
+    waitForHydration(accountStore),
+    waitForHydration(networkStore),
+    waitForHydration(settingsStore),
+  ])
+
   // Anvil doesn't support `personal_sign` – use `eth_sign` instead.
   if (networkType === 'anvil' && request.method === 'personal_sign') {
     request.method = 'eth_sign' as any
@@ -356,6 +491,17 @@ async function execute(
               }),
         } as any)
 
+        const { addTransaction } = transactionStore.getState()
+        addTransaction({
+          hash,
+          from: txParams.from,
+          to: txParams.to ?? undefined,
+          value: txParams.value ? BigInt(txParams.value).toString() : undefined,
+          data: txParams.data,
+          chainId: network.chainId,
+          timestamp: Date.now(),
+        })
+
         walletMessenger.send('transactionExecuted', undefined)
         return {
           id: request.id,
@@ -367,6 +513,70 @@ async function execute(
           id: request.id,
           jsonrpc: '2.0',
           error: (error as Error).message || 'Transaction failed',
+        } as RpcResponse
+      }
+    }
+  }
+
+  if (request.method === 'personal_sign') {
+    const [param1, param2] = request.params as [Hex, Hex]
+    let data = param1
+    let from = param2 as Address
+
+    if (isAddress(param1) && !isAddress(param2)) {
+      from = param1
+      data = param2
+    }
+
+    const { accounts } = accountStore.getState()
+    const account = accounts.find(
+      (acc) => acc.address.toLowerCase() === from.toLowerCase(),
+    )
+
+    if (account && account.type === 'local' && 'privateKey' in account) {
+      try {
+        const localAccount = privateKeyToAccount(account.privateKey as Hex)
+        const signature = await localAccount.signMessage({
+          message: { raw: data },
+        })
+        return {
+          id: request.id,
+          jsonrpc: '2.0',
+          result: signature,
+        } as RpcResponse
+      } catch (error) {
+        return {
+          id: request.id,
+          jsonrpc: '2.0',
+          error: (error as Error).message || 'Signing failed',
+        } as RpcResponse
+      }
+    }
+  }
+
+  if (request.method === 'eth_signTypedData_v4') {
+    const [from, data] = request.params as [Address, string]
+    const { accounts } = accountStore.getState()
+    const account = accounts.find(
+      (acc) => acc.address.toLowerCase() === from.toLowerCase(),
+    )
+
+    if (account && account.type === 'local' && 'privateKey' in account) {
+      try {
+        const localAccount = privateKeyToAccount(account.privateKey as Hex)
+        const signature = await localAccount.signTypedData(
+          JSON.parse(data) as any,
+        )
+        return {
+          id: request.id,
+          jsonrpc: '2.0',
+          result: signature,
+        } as RpcResponse
+      } catch (error) {
+        return {
+          id: request.id,
+          jsonrpc: '2.0',
+          error: (error as Error).message || 'Signing failed',
         } as RpcResponse
       }
     }
@@ -390,8 +600,26 @@ async function execute(
   if (
     request.method === 'eth_sendTransaction' ||
     request.method === 'wallet_sendCalls'
-  )
+  ) {
+      if (
+      request.method === 'eth_sendTransaction' &&
+      (response as any).result
+    ) {
+      const [txParams] = request.params as [RpcTransactionRequest]
+      const { network } = networkStore.getState()
+      const { addTransaction } = transactionStore.getState()
+      addTransaction({
+        hash: (response as any).result,
+        from: txParams.from,
+        to: txParams.to ?? undefined,
+        value: txParams.value ? BigInt(txParams.value).toString() : undefined,
+        data: txParams.data,
+        chainId: network.chainId,
+        timestamp: Date.now(),
+      })
+    }
     walletMessenger.send('transactionExecuted', undefined)
+  }
 
   if ((response as { success?: boolean }).success === false)
     return {

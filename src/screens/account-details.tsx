@@ -33,7 +33,7 @@ import { useAccountTokens } from '~/hooks/useAccountTokens'
 import { useErc20Balance } from '~/hooks/useErc20Balance'
 import { useErc20Metadata } from '~/hooks/useErc20Metadata'
 import { useSetErc20Balance } from '~/hooks/useSetErc20Balance'
-import { useAccountStore, useNetworkStore } from '~/zustand'
+import { useAccountStore, useNetworkStore, useTransactionStore } from '~/zustand'
 
 export default function AccountDetails() {
   const { address } = useParams()
@@ -87,6 +87,7 @@ export default function AccountDetails() {
               <TabsList
                 items={[
                   { label: 'Tokens', value: 'tokens' },
+                  { label: 'Activity', value: 'activity' },
                   // { label: 'NFTs', value: 'nfts' },
                 ]}
                 onSelect={(item) => {
@@ -96,6 +97,9 @@ export default function AccountDetails() {
               <TabsContent inset={false} value="tokens">
                 <Tokens accountAddress={address as Address} />
               </TabsContent>
+              <TabsContent inset={false} value="activity">
+                <Activity accountAddress={address as Address} />
+              </TabsContent>
               {/* <TabsContent inset={false} value="nfts">
               <NFTs />
             </TabsContent> */}
@@ -104,6 +108,54 @@ export default function AccountDetails() {
         </Stack>
       </Inset>
     </>
+  )
+}
+
+function Activity({ accountAddress }: { accountAddress: Address }) {
+  const { network } = useNetworkStore()
+  const { getTransactions } = useTransactionStore()
+  const transactions = getTransactions(accountAddress, network.chainId)
+  const navigate = useNavigate()
+
+  return (
+    <Inset vertical="8px">
+      <Stack gap="8px">
+        {transactions.length === 0 ? (
+          <Text color="text/tertiary" align="center">
+            No activity yet
+          </Text>
+        ) : (
+          transactions.map((tx) => (
+            <Box
+              key={tx.hash}
+              onClick={() => navigate(`/transaction/${tx.hash}`)}
+              style={{ cursor: 'pointer' }}
+            >
+              <Box
+                padding="8px"
+                backgroundColor={{
+                  default: 'surface/secondary/elevated',
+                  hover: 'surface/fill/tertiary',
+                }}
+                borderRadius="6px"
+              >
+                <Stack gap="4px">
+                  <Inline alignHorizontal="justify">
+                    <Text weight="medium">Sent Transaction</Text>
+                    <Text color="text/tertiary" size="11px">
+                      {new Date(tx.timestamp).toLocaleTimeString()}
+                    </Text>
+                  </Inline>
+                  <Text.Truncated color="text/secondary" size="11px">
+                    {tx.hash}
+                  </Text.Truncated>
+                </Stack>
+              </Box>
+            </Box>
+          ))
+        )}
+      </Stack>
+    </Inset>
   )
 }
 

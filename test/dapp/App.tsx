@@ -449,11 +449,14 @@ function SignMessage() {
 
     setSignature(undefined)
     try {
+      const [account] = await provider.request({
+        method: 'eth_accounts',
+      })
       const signature = await provider.request({
         method: 'personal_sign',
         params: [
           stringToHex(message),
-          '0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266',
+          account,
         ],
       })
       setSignature(signature)
@@ -494,6 +497,9 @@ function SignTypedData() {
   const handleClickSign = async () => {
     setSignature(undefined)
     try {
+      const [account] = await provider.request({
+        method: 'eth_accounts',
+      })
       const typedData = stringify(
         {
           domain: {
@@ -530,7 +536,7 @@ function SignTypedData() {
       )
       const signature = await provider.request({
         method: 'eth_signTypedData_v4',
-        params: ['0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266', typedData],
+        params: [account, typedData],
       })
       setSignature(signature)
     } catch (err) {

@@ -133,8 +133,13 @@ function Accounts() {
 function AccountRow({ account }: { account: Account }) {
   const { account: activeAccount, removeAccount } = useAccountStore()
   const { mutateAsync: setAccount } = useSetAccount()
+  const { network } = useNetworkStore()
 
   const active = activeAccount?.address === account.address
+  const isWatchOnly =
+    account.type === 'json-rpc' &&
+    (network.type === 'remote' || !account.impersonate)
+
   return (
     <Box
       backgroundColor={active ? 'surface/fill/tertiary' : undefined}
@@ -184,6 +189,16 @@ function AccountRow({ account }: { account: Account }) {
                     : account.address}
                 </Text>
               </Tooltip>
+              {isWatchOnly && (
+                <Tooltip label="Watch-only account">
+                  <SFSymbol
+                    color="text/tertiary"
+                    size="12px"
+                    symbol="eye"
+                    weight="medium"
+                  />
+                </Tooltip>
+              )}
               {account.address && (
                 <Box position="absolute" style={{ right: -24, top: -6 }}>
                   <Button.Copy
@@ -341,6 +356,7 @@ function ImportAccount() {
           address,
           displayName,
           impersonate: type === 'anvil',
+          imported: true,
           rpcUrl,
           type: 'json-rpc',
         },
