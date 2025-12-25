@@ -38,8 +38,17 @@ function createBrowserStorage(type: 'local' | 'session') {
   return {
     ...noopStorage,
     get: (key: string) => {
-      const value = store.getItem(key)
-      return Promise.resolve({ [key]: value })
+      const rawValue = store.getItem(key)
+      let parsedValue: unknown = rawValue
+      if (rawValue !== null) {
+        try {
+          parsedValue = JSON.parse(rawValue, reviver)
+        } catch {
+          // If the value is not valid JSON, fall back to the raw string
+          parsedValue = rawValue
+        }
+      }
+      return Promise.resolve({ [key]: parsedValue })
     },
     set: (items: Record<string, any>) => {
       Object.entries(items).forEach(([k, v]) => store.setItem(k, v))

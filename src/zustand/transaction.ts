@@ -23,13 +23,19 @@ export type TransactionActions = {
 
 export type TransactionStore = TransactionState & TransactionActions
 
+const MAX_TRANSACTIONS = 100
+
 export const transactionStore = createStore<TransactionStore>(
   (set, get) => ({
     transactions: [],
     addTransaction(transaction) {
-      set((state) => ({
-        transactions: [transaction, ...state.transactions],
-      }))
+      set((state) => {
+        const newTransactions = [transaction, ...state.transactions]
+        // Keep only the most recent MAX_TRANSACTIONS
+        return {
+          transactions: newTransactions.slice(0, MAX_TRANSACTIONS),
+        }
+      })
     },
     getTransactions(address, chainId) {
       return get().transactions.filter(

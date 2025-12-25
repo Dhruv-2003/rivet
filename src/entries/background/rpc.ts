@@ -461,15 +461,22 @@ async function execute(
       try {
         const { network } = networkStore.getState()
         const localAccount = privateKeyToAccount(account.privateKey as Hex)
-        // TODO: The chain info should be fetched from the network config, this fixed won't work for CGT networks
+        const networkConfig = network as any
+        const chain = {
+          id: network.chainId,
+          name: networkConfig.name ?? 'Local',
+          nativeCurrency: networkConfig.nativeCurrency ?? {
+            decimals: 18,
+            name: 'Ether',
+            symbol: 'ETH',
+          },
+          rpcUrls: networkConfig.rpcUrls ?? {
+            default: { http: [network.rpcUrl] },
+          },
+        } as any
         const client = createWalletClient({
           account: localAccount,
-          chain: {
-            id: network.chainId,
-            name: 'Local',
-            nativeCurrency: { decimals: 18, name: 'Ether', symbol: 'ETH' },
-            rpcUrls: { default: { http: [network.rpcUrl] } },
-          },
+          chain,
           transport: http(network.rpcUrl),
         })
 
@@ -606,16 +613,22 @@ async function execute(
     if (request.method === 'eth_sendTransaction' && (response as any).result) {
       const [txParams] = request.params as [RpcTransactionRequest]
       const { network } = networkStore.getState()
+      const { accounts } = accountStore.getState()
+      const fromAccount = accounts.find(
+        (acc) => acc.address.toLowerCase() === txParams.from.toLowerCase(),
+      )
       const { addTransaction } = transactionStore.getState()
-      addTransaction({
-        hash: (response as any).result,
-        from: txParams.from,
-        to: txParams.to ?? undefined,
-        value: txParams.value ? BigInt(txParams.value).toString() : undefined,
-        data: txParams.data,
-        chainId: network.chainId,
-        timestamp: Date.now(),
-      })
+      if (!fromAccount || fromAccount.type !== 'local') {
+        addTransaction({
+          hash: (response as any).result,
+          from: txParams.from,
+          to: txParams.to ?? undefined,
+          value: txParams.value ? BigInt(txParams.value).toString() : undefined,
+          data: txParams.data,
+          chainId: network.chainId,
+          timestamp: Date.now(),
+        })
+      }
     }
     walletMessenger.send('transactionExecuted', undefined)
   }
