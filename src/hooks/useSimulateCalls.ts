@@ -19,11 +19,7 @@ export function useSimulateCalls({
   const client = useClient()
 
   return useQuery({
-    queryKey: getSimulateCallsQueryKey([
-      client.key,
-      account,
-      stringify(calls),
-    ]),
+    queryKey: getSimulateCallsQueryKey([client.key, account, stringify(calls)]),
     queryFn: async () => {
       if (!calls.length) return null
       try {

@@ -329,38 +329,37 @@ export function setupRpcHandler({ messenger }: { messenger: Messenger }) {
       }
 
       if (request.method === 'wallet_watchAsset') {
-          const {
-            type,
-            options: { address },
-          } = request.params as any
+        const {
+          type,
+          options: { address },
+        } = request.params as any
 
-          if (type === 'ERC20') {
-            const { account } = accountStore.getState()
-            const { network } = networkStore.getState()
-            if (account && network) {
-              tokensStore.getState().addToken(
-                {
-                  accountAddress: account.address,
-                  rpcUrl: network.rpcUrl,
-                },
-                { tokenAddress: address },
-              )
-            }
+        if (type === 'ERC20') {
+          const { account } = accountStore.getState()
+          const { network } = networkStore.getState()
+          if (account && network) {
+            tokensStore.getState().addToken(
+              {
+                accountAddress: account.address,
+                rpcUrl: network.rpcUrl,
+              },
+              { tokenAddress: address },
+            )
           }
+        }
 
-          return {
-            id: request.id,
-            jsonrpc: '2.0',
-            result: true,
-          } as RpcResponse
+        return {
+          id: request.id,
+          jsonrpc: '2.0',
+          result: true,
+        } as RpcResponse
       }
 
-  
       if (request.method === 'wallet_switchEthereumChain') {
         const [{ chainId }] = request.params as [{ chainId: Hex }]
         const { networks, switchNetwork } = networkStore.getState()
         const network = networks.find(
-          (n) => n.chainId === parseInt(chainId, 16),
+          (n) => n.chainId === Number.parseInt(chainId, 16),
         )
 
         if (!network) {
@@ -404,7 +403,7 @@ export function setupRpcHandler({ messenger }: { messenger: Messenger }) {
 
         await upsertNetwork({
           network: {
-            chainId: parseInt(chain.chainId, 16),
+            chainId: Number.parseInt(chain.chainId, 16),
             name: chain.chainName,
             rpcUrl,
             type: 'remote',
@@ -412,7 +411,10 @@ export function setupRpcHandler({ messenger }: { messenger: Messenger }) {
           rpcUrl,
         })
         switchNetwork(rpcUrl)
-        inpageMessenger.send('chainChanged', { chainId: chain.chainId , sessions: [session!]})
+        inpageMessenger.send('chainChanged', {
+          chainId: chain.chainId,
+          sessions: [session!],
+        })
 
         return {
           id: request.id,
@@ -601,10 +603,7 @@ async function execute(
     request.method === 'eth_sendTransaction' ||
     request.method === 'wallet_sendCalls'
   ) {
-      if (
-      request.method === 'eth_sendTransaction' &&
-      (response as any).result
-    ) {
+    if (request.method === 'eth_sendTransaction' && (response as any).result) {
       const [txParams] = request.params as [RpcTransactionRequest]
       const { network } = networkStore.getState()
       const { addTransaction } = transactionStore.getState()

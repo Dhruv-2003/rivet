@@ -454,10 +454,7 @@ function SignMessage() {
       })
       const signature = await provider.request({
         method: 'personal_sign',
-        params: [
-          stringToHex(message),
-          account,
-        ],
+        params: [stringToHex(message), account],
       })
       setSignature(signature)
     } catch (err) {

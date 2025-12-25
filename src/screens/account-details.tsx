@@ -33,7 +33,11 @@ import { useAccountTokens } from '~/hooks/useAccountTokens'
 import { useErc20Balance } from '~/hooks/useErc20Balance'
 import { useErc20Metadata } from '~/hooks/useErc20Metadata'
 import { useSetErc20Balance } from '~/hooks/useSetErc20Balance'
-import { useAccountStore, useNetworkStore, useTransactionStore } from '~/zustand'
+import {
+  useAccountStore,
+  useNetworkStore,
+  useTransactionStore,
+} from '~/zustand'
 
 export default function AccountDetails() {
   const { address } = useParams()
