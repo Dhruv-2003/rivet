@@ -17,7 +17,7 @@
 
 NOTE: ⚠️ Experimental. Unsafe. Dev only. Use at your own risk.
 
-This is an experimental fork of Rivet by Paradigm with a focus on remote network access and improved accounts mangagment.
+This is an experimental fork of Rivet by Paradigm with a focus on remote network access and improved account mangagment. To try out the extension use this [exp build release](https://github.com/Dhruv-2003/rivet/releases/tag/v0.0.0-exp)
 
 ## What is Rivet?
 
