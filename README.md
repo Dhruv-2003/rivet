@@ -14,6 +14,11 @@
   </a>
 </div>
 
+
+NOTE: ⚠️ Experimental. Unsafe. Dev only. Use at your own risk.
+
+This is an experimental fork of Rivet by Paradigm with a focus on remote network access and improved accounts mangagment.
+
 ## What is Rivet?
 
 Rivet is a developer Wallet & DevTools for Anvil (akin to [Browser DevTools](https://developer.mozilla.org/en-US/docs/Learn/Common_questions/Tools_and_setup/What_are_browser_developer_tools#how_to_open_the_devtools_in_your_browser) or [React DevTools](https://react.dev/learn/react-developer-tools)). It is a browser extension that enables developers to inspect, debug, modify, and manipulate the state of Ethereum: accounts, blocks, contracts & the node itself. Rivet is also compatible with any production dApp, meaning you can simulate any type of action from either an Account attached on the Anvil instance, or by "impersonating" another Account on the network.
