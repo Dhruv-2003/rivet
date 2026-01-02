@@ -3,6 +3,8 @@ import { queryOptions, useQuery } from '@tanstack/react-query'
 import type { Address, Client } from 'viem'
 import { createQueryKey } from '~/react-query'
 import { etherscanApiUrls } from '../constants/etherscan'
+import { BlockscoutABILoader } from '../utils/blockscoutAbiLoader'
+import { useSettingsStore } from '../zustand'
 import { useClient } from './useClient'
 
 type AutoloadAbiParameters = {
@@ -12,7 +14,7 @@ type AutoloadAbiParameters = {
 
 export const autoloadAbiQueryKey = createQueryKey<
   'autoload-abi',
-  [key: Client['key'], address: Address]
+  [key: Client['key'], address: Address, abiLoaderConfigNonce: number]
 >('autoload-abi')
 
 export function useAutoloadAbiQueryOptions({
@@ -20,11 +22,18 @@ export function useAutoloadAbiQueryOptions({
   enabled,
 }: AutoloadAbiParameters) {
   const client = useClient()
+  const {
+    abiLoaderConfigNonce,
+    etherscanApiKey,
+    blockscoutApiKey,
+    blockscoutApiUrl,
+  } = useSettingsStore()
+
   return queryOptions({
     enabled: enabled && Boolean(address),
     gcTime: Number.POSITIVE_INFINITY,
     staleTime: Number.POSITIVE_INFINITY,
-    queryKey: autoloadAbiQueryKey([client.key, address!]),
+    queryKey: autoloadAbiQueryKey([client.key, address!, abiLoaderConfigNonce]),
     async queryFn() {
       if (!address) throw new Error('address is required')
       if (!client) throw new Error('client is required')
@@ -38,6 +47,11 @@ export function useAutoloadAbiQueryOptions({
           new loaders.EtherscanABILoader({
             baseURL:
               (etherscanApiUrls as any)[client.chain.id] || etherscanApiUrls[1],
+            apiKey: etherscanApiKey?.trim() || undefined,
+          }),
+          new BlockscoutABILoader({
+            baseURL: blockscoutApiUrl,
+            apiKey: blockscoutApiKey?.trim() || undefined,
           }),
         ]),
       })

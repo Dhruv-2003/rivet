@@ -30,12 +30,14 @@ export function useContractsQueryOptions({
     staleTime: Number.POSITIVE_INFINITY,
     enabled: Boolean(
       enabled &&
+        network.type === 'anvil' &&
         block?.number &&
         network.forkBlockNumber &&
         block?.number > network.forkBlockNumber,
     ),
     queryKey: getContractsQueryKey([client.key]),
     async queryFn() {
+      if (network.type !== 'anvil') return []
       if (!network.forkBlockNumber) throw new Error()
 
       const contracts = await getContracts(client, {
