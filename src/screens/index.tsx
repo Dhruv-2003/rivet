@@ -242,6 +242,15 @@ function AccountRow({ account }: { account: Account }) {
                 variant={active ? 'solid invert' : 'stroked fill'}
               />
             )}
+            <Link to={`account/${account.address}?tab=send`}>
+              <Button.Symbol
+                label="Send Transaction"
+                height="24px"
+                onClick={() => {}}
+                symbol="paperplane"
+                variant={active ? 'solid invert' : 'stroked fill'}
+              />
+            </Link>
             <Link to={`account/${account.address}`}>
               <Box style={{ width: active ? '52px' : '24px' }}>
                 <Button.Symbol
