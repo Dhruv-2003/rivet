@@ -2,8 +2,8 @@ import { loaders, whatsabi } from '@shazow/whatsabi'
 import { queryOptions, useQuery } from '@tanstack/react-query'
 import type { Address, Client } from 'viem'
 import { createQueryKey } from '~/react-query'
-import { etherscanApiUrls } from '../constants/etherscan'
-import { BlockscoutABILoader } from '../utils/blockscoutAbiLoader'
+// import { etherscanApiUrls } from '../constants/etherscan'
+// import { BlockscoutABILoader } from '../utils/blockscoutAbiLoader'
 import { useSettingsStore } from '../zustand'
 import { useClient } from './useClient'
 
@@ -40,21 +40,26 @@ export function useAutoloadAbiQueryOptions({
       const result = await whatsabi.autoload(address, {
         provider: client,
         followProxies: true,
+        onProgress: (phase) =>
+          console.log('whatsabi autoload progress:', phase),
+        onError: (phase, context) =>
+          console.error('whatsabi autoload error:', phase, context),
         abiLoader: new loaders.MultiABILoader([
           new loaders.SourcifyABILoader({
             chainId: client.chain.id,
           }),
           new loaders.EtherscanABILoader({
-            baseURL:
-              (etherscanApiUrls as any)[client.chain.id] || etherscanApiUrls[1],
-            apiKey: etherscanApiKey?.trim() || undefined,
+            apiKey: etherscanApiKey?.trim() || '',
+            chainId: client.chain.id,
           }),
-          new BlockscoutABILoader({
+          new loaders.AnyABILoader(),
+          new loaders.BlockscoutABILoader({
             baseURL: blockscoutApiUrl,
             apiKey: blockscoutApiKey?.trim() || undefined,
           }),
         ]),
       })
+      console.log({ result })
       if (!result.abi.some((item) => (item as { name?: string }).name))
         return null
       return result.abi.map((abiItem) => ({

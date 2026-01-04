@@ -446,7 +446,9 @@ function SendTransactionRequest(args: {
     isLoading,
   } = usePrepareTransactionRequest({
     ...transactionRequest,
-    account: transactionRequest.from ?? account_,
+    account: (transactionRequest.from ?? account_?.address) as
+      | `0x${string}`
+      | undefined,
   })
 
   const request = preparedRequest || {}

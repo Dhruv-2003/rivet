@@ -16,6 +16,7 @@ import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
 
 import {
   Container,
+  Eip7702Utilities,
   LabelledContent,
   LoadMore,
   TabsContent,
@@ -83,6 +84,7 @@ export default function Index() {
               { label: 'Blocks', value: 'blocks' },
               { label: 'Transactions', value: 'transactions' },
               { label: 'Contracts', value: 'contracts' },
+              { label: 'Utilities', value: 'utilities' },
             ]}
             onSelect={(item) => {
               setParams({ tab: item.value })
@@ -100,6 +102,9 @@ export default function Index() {
           </TabsContent>
           <TabsContent inset={false} scrollable="auto" value="contracts">
             <Contracts />
+          </TabsContent>
+          <TabsContent inset={false} scrollable="auto" value="utilities">
+            <Utilities />
           </TabsContent>
         </Box>
       </Tabs.Root>
@@ -1219,5 +1224,21 @@ function ImportContract() {
         )}
       </Inline>
     </Form.Root>
+  )
+}
+
+////////////////////////////////////////////////////////////////////////
+// Utilities
+
+function Utilities() {
+  return (
+    <Inset vertical="8px">
+      <Stack gap="12px">
+        <Text color="text/tertiary" size="9px">
+          EIP-7702 DELEGATION
+        </Text>
+        <Eip7702Utilities />
+      </Stack>
+    </Inset>
   )
 }

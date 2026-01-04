@@ -39,8 +39,10 @@ export default function ContractDetails() {
     address: contract?.address,
     enabled: Boolean(!contract?.abi && contract?.address),
   })
+  console.log({ autoloadAbi })
 
   const abi = (contract?.abi || autoloadAbi) as Abi
+  console.log({ abi })
 
   const abiFunctions = useMemo(() => {
     if (!abi) return undefined
