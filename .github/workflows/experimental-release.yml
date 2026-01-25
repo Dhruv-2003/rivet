@@ -1,0 +1,55 @@
+name: Experimental Release
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version suffix (e.g., "exp.1", "eip7702.1")'
+        required: true
+        default: 'exp.1'
+      branch:
+        description: 'Branch to release from'
+        required: true
+        default: 'main'
+
+jobs:
+  experimental-release:
+    name: Experimental Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event.inputs.branch }}
+
+      - name: Install dependencies
+        uses: ./.github/actions/install-dependencies
+
+      - name: Build
+        run: bun run build
+
+      - name: Zip
+        run: bun run zip
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: 'Rivet Experimental v0.0.0-${{ github.event.inputs.version }}'
+          body: |
+            ## 🧪 Experimental Release
+            
+            **Version:** `v0.0.0-${{ github.event.inputs.version }}`
+            **Branch:** `${{ github.event.inputs.branch }}`
+            **Commit:** `${{ github.sha }}`
+            
+            ---
+            
+            ### Installation
+            1. Download `extension.zip` below
+            2. Extract to a folder
+            3. Go to `chrome://extensions`
+            4. Enable "Developer mode"
+            5. Click "Load unpacked" and select the extracted folder
+          files: dist/extension.zip
+          tag_name: 'v0.0.0-${{ github.event.inputs.version }}'
+          prerelease: true
