@@ -490,7 +490,7 @@ async function execute(
       return {
         id: request.id,
         jsonrpc: '2.0',
-        error: 'Missing from address in transaction',
+        error: { code: -32602, message: 'Missing from address in transaction' },
       } as RpcResponse
     }
     const { accounts } = accountStore.getState()
@@ -639,6 +639,7 @@ async function execute(
         id: request.id,
         rpcClient,
         networkType,
+        atomicRequired: request.params![0].atomicRequired,
       } as any)
     }
 
@@ -692,7 +693,7 @@ async function handleSendCalls({
   id,
   rpcClient,
   networkType,
-  capabilities,
+  atomicRequired = false,
 }: {
   calls: RpcTransactionRequest[]
   from: Address
@@ -700,11 +701,10 @@ async function handleSendCalls({
   rpcClient: HttpRpcClient
   networkType: 'anvil' | 'remote'
   capabilities?: { atomic?: { required?: boolean } }
+  atomicRequired?: boolean
 }) {
   const { setBatch } = batchCallsStore.getState()
   const { network } = networkStore.getState()
-
-  const atomicRequired = capabilities?.atomic?.required ?? false
 
   // Check if account is delegated to SimpleAccount7702
   const delegatedTo = await getDelegation(network.rpcUrl, from)

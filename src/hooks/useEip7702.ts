@@ -2,35 +2,14 @@ import { queryOptions, useMutation, useQuery } from '@tanstack/react-query'
 import { http, type Address, type Hex, createWalletClient } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 
-import {
-  EIP7702_DELEGATION_PREFIX,
-  EIP7702_TEST_ADDRESS,
-  EIP7702_TEST_CODE,
-} from '~/constants/eip7702'
+import { EIP7702_DELEGATION_PREFIX } from '~/constants/eip7702'
 import { createQueryKey } from '~/react-query'
 import type { Client } from '~/viem'
 
-import {
-  pendingRequestsStore,
-  useAccountStore,
-  useNetworkStore,
-} from '~/zustand'
+import { checkEip7702Support } from '~/utils/eip7702Utils'
+import { useAccountStore, useNetworkStore } from '~/zustand'
 import { useBytecode } from './useBytecode'
 import { useClient } from './useClient'
-
-////////////////////////////////////////////////////////////////////////
-// Types
-
-type JsonRpcResponse<T = unknown> = {
-  jsonrpc: '2.0'
-  id: number | string
-  result?: T
-  error?: {
-    code: number
-    message: string
-    data?: unknown
-  }
-}
 
 ////////////////////////////////////////////////////////////////////////
 // EIP-7702 Support Detection
@@ -39,44 +18,6 @@ export const getEip7702SupportQueryKey = createQueryKey<
   'eip7702-support',
   [key: Client['key']]
 >('eip7702-support')
-
-/**
- * Check if the connected chain supports EIP-7702 by using eth_estimateGas
- * with a state override containing 7702 delegation code.
- */
-async function checkEip7702Support(rpcUrl: string): Promise<boolean> {
-  try {
-    const response = await fetch(rpcUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        method: 'eth_estimateGas',
-        params: [
-          {
-            from: EIP7702_TEST_ADDRESS,
-            to: EIP7702_TEST_ADDRESS,
-            data: '0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000',
-            value: '0x0',
-          },
-          'latest',
-          {
-            [EIP7702_TEST_ADDRESS]: {
-              code: EIP7702_TEST_CODE,
-            },
-          },
-        ],
-        id: 1,
-      }),
-    })
-
-    const data = (await response.json()) as JsonRpcResponse
-    // If there's an error about invalid code prefix or unsupported feature, return false
-    return !data.error?.message?.includes('unsupported')
-  } catch {
-    return false
-  }
-}
 
 export function getEip7702SupportQueryOptions(client: Client) {
   return queryOptions({
@@ -189,23 +130,10 @@ export function useDelegateAccount() {
         return hash
       }
 
-      // For JSON-RPC accounts, use the pending request flow
-      const requestId = Date.now()
-
-      pendingRequestsStore.getState().addPendingRequest({
-        id: requestId,
-        method: 'eth_sendTransaction',
-        params: [
-          {
-            from: account.address as Hex,
-            to: account.address as Hex,
-            data: '0x',
-            value: '0x0',
-          },
-        ],
-      })
-
-      return `pending:${requestId}`
+      throw new Error(
+        'EIP-7702 delegation is only supported for local accounts in this flow. ' +
+          'Please use a local account with a private key or a dedicated delegation flow for JSON-RPC accounts.',
+      )
     },
   })
 }
