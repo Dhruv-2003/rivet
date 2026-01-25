@@ -761,6 +761,7 @@ function SendCalls() {
         method: 'wallet_sendCalls',
         params: [
           {
+            atomicRequired: false,
             calls: [
               {
                 data: encodeFunctionData({
@@ -787,7 +788,7 @@ function SendCalls() {
           },
         ],
       })
-      setId(id as string)
+      setId(id.id)
     } catch (err) {
       setError(err as Error)
     }

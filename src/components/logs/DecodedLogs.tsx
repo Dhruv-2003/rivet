@@ -78,14 +78,15 @@ function LogRow({ index, log }: { index: number; log: Log }) {
   const selector = log.topics[0]
 
   // Try extract ABI from whatsabi autoloading.
-  const { data: abi } = useAutoloadAbi({
+  const { data: autoloadResult } = useAutoloadAbi({
     address: log.address,
     enabled: Boolean(log.address),
   })
+  const abi = autoloadResult?.abi
   const autoloadAbiItem = useMemo(
     () =>
       abi && selector
-        ? (getAbiItem({ abi, name: selector }) as AbiEvent)
+        ? (getAbiItem({ abi: abi, name: selector }) as AbiEvent)
         : undefined,
     [abi, selector],
   )

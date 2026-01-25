@@ -71,6 +71,7 @@ export function usePrepareTransactionRequest(
   args: GetPrepareTransactionRequestQueryOptionsParameters,
 ) {
   const queryOptions = usePrepareTransactionRequestQueryOptions(args)
+  // @ts-expect-error - Type is too complex for TypeScript to represent
   return useQuery(queryOptions)
 }
 

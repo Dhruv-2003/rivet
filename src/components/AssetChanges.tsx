@@ -1,7 +1,9 @@
 import { formatUnits } from 'viem'
 import { Box, Column, Columns, Stack, Text } from '~/design-system'
 
-export function AssetChanges({ changes }: { changes: any[] }) {
+export function AssetChanges({
+  changes,
+}: { changes: readonly any[] | undefined }) {
   if (!changes || changes.length === 0) {
     return (
       <Box padding="16px">

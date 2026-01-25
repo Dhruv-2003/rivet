@@ -7,9 +7,15 @@ export default function Settings() {
     bypassConnectAuth,
     bypassSignatureAuth,
     bypassTransactionAuth,
+    blockscoutApiKey,
+    blockscoutApiUrl,
+    etherscanApiKey,
     setBypassConnectAuth,
     setBypassSignatureAuth,
     setBypassTransactionAuth,
+    setBlockscoutApiKey,
+    setBlockscoutApiUrl,
+    setEtherscanApiKey,
   } = useSettingsStore()
 
   return (
@@ -73,6 +79,68 @@ export default function Settings() {
                   setBypassTransactionAuth(e.target.checked)
                 }}
                 type="checkbox"
+              />
+            </Inline>
+          </Stack>
+        </Inset>
+
+        <Text color="text/tertiary">ABI Providers</Text>
+        <Inset right="4px">
+          <Stack gap="8px">
+            <Inline
+              alignVertical="center"
+              alignHorizontal="justify"
+              wrap={false}
+            >
+              <Box as="label" htmlFor="etherscan-api-key" width="full">
+                <Text size="12px">Etherscan API Key (optional)</Text>
+              </Box>
+              <Box
+                as="input"
+                id="etherscan-api-key"
+                value={etherscanApiKey ?? ''}
+                onChange={(e) => setEtherscanApiKey(e.target.value)}
+                type="password"
+                placeholder="API key"
+                style={{ width: '240px' }}
+              />
+            </Inline>
+
+            <Inline
+              alignVertical="center"
+              alignHorizontal="justify"
+              wrap={false}
+            >
+              <Box as="label" htmlFor="blockscout-api-url" width="full">
+                <Text size="12px">Blockscout API URL (optional)</Text>
+              </Box>
+              <Box
+                as="input"
+                id="blockscout-api-url"
+                value={blockscoutApiUrl ?? ''}
+                onChange={(e) => setBlockscoutApiUrl(e.target.value)}
+                type="text"
+                placeholder="https://eth.blockscout.com/api"
+                style={{ width: '240px' }}
+              />
+            </Inline>
+
+            <Inline
+              alignVertical="center"
+              alignHorizontal="justify"
+              wrap={false}
+            >
+              <Box as="label" htmlFor="blockscout-api-key" width="full">
+                <Text size="12px">Blockscout API Key (optional)</Text>
+              </Box>
+              <Box
+                as="input"
+                id="blockscout-api-key"
+                value={blockscoutApiKey ?? ''}
+                onChange={(e) => setBlockscoutApiKey(e.target.value)}
+                type="password"
+                placeholder="API key"
+                style={{ width: '240px' }}
               />
             </Inline>
           </Stack>

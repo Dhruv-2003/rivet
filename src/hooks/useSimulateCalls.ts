@@ -23,10 +23,9 @@ export function useSimulateCalls({
     queryFn: async () => {
       if (!calls.length) return null
       try {
-        // @ts-ignore
         return await client.simulateCalls({
           account,
-          calls,
+          calls: calls as any,
           traceAssetChanges: true,
         })
       } catch (error) {

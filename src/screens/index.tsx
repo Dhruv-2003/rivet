@@ -16,6 +16,7 @@ import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
 
 import {
   Container,
+  Eip7702Utilities,
   LabelledContent,
   LoadMore,
   TabsContent,
@@ -83,6 +84,7 @@ export default function Index() {
               { label: 'Blocks', value: 'blocks' },
               { label: 'Transactions', value: 'transactions' },
               { label: 'Contracts', value: 'contracts' },
+              { label: 'Utilities', value: 'utilities' },
             ]}
             onSelect={(item) => {
               setParams({ tab: item.value })
@@ -100,6 +102,9 @@ export default function Index() {
           </TabsContent>
           <TabsContent inset={false} scrollable="auto" value="contracts">
             <Contracts />
+          </TabsContent>
+          <TabsContent inset={false} scrollable="auto" value="utilities">
+            <Utilities />
           </TabsContent>
         </Box>
       </Tabs.Root>
@@ -242,6 +247,15 @@ function AccountRow({ account }: { account: Account }) {
                 variant={active ? 'solid invert' : 'stroked fill'}
               />
             )}
+            <Link to={`account/${account.address}?tab=send`}>
+              <Button.Symbol
+                label="Send Transaction"
+                height="24px"
+                onClick={() => {}}
+                symbol="paperplane"
+                variant={active ? 'solid invert' : 'stroked fill'}
+              />
+            </Link>
             <Link to={`account/${account.address}`}>
               <Box style={{ width: active ? '52px' : '24px' }}>
                 <Button.Symbol
@@ -946,9 +960,14 @@ function Transactions() {
 // Contracts
 
 function Contracts() {
-  const { contracts: contracts_, hideContract } = useContracts()
+  const { contracts: contracts_, removeContract, hideContract } = useContracts()
+  const [showHidden, setShowHidden] = useState(false)
 
-  const contracts = contracts_.filter((contract) => contract.visible)
+  const contracts = showHidden
+    ? contracts_
+    : contracts_.filter((contract) => contract.visible)
+
+  const hiddenCount = contracts_.filter((contract) => !contract.visible).length
 
   const VirtualList = useVirtualList({
     layout: useMemo(
@@ -969,129 +988,156 @@ function Contracts() {
   })
 
   return (
-    <VirtualList.Wrapper marginHorizontal="-8px">
-      <VirtualList>
-        {({ getLayoutItem, items }) =>
-          items.map((item) => {
-            const layoutItem = getLayoutItem(item.index)
+    <Stack gap="0px">
+      {hiddenCount > 0 && (
+        <Box paddingHorizontal="8px" paddingVertical="8px">
+          <Button
+            height="24px"
+            variant={showHidden ? 'solid primary' : 'stroked fill'}
+            onClick={() => setShowHidden(!showHidden)}
+          >
+            {showHidden ? 'Hide' : 'Show'} {hiddenCount} hidden contract
+            {hiddenCount > 1 ? 's' : ''}
+          </Button>
+        </Box>
+      )}
+      <VirtualList.Wrapper marginHorizontal="-8px">
+        <VirtualList>
+          {({ getLayoutItem, items }) =>
+            items.map((item) => {
+              const layoutItem = getLayoutItem(item.index)
 
-            if (layoutItem.type === 'search')
-              return (
-                <VirtualList.Item {...item}>
-                  <Inset space="8px">
-                    <ImportContract />
-                  </Inset>
-                </VirtualList.Item>
-              )
+              if (layoutItem.type === 'search')
+                return (
+                  <VirtualList.Item {...item}>
+                    <Inset space="8px">
+                      <ImportContract />
+                    </Inset>
+                  </VirtualList.Item>
+                )
 
-            if (layoutItem.type === 'header')
-              return (
-                <VirtualList.Item {...item}>
-                  <Box
-                    display="flex"
-                    alignItems="center"
-                    height="full"
-                    paddingHorizontal="8px"
-                    width="full"
-                  >
-                    <Columns alignHorizontal="justify" gap="4px" width="full">
-                      <Column alignVertical="center">
-                        <Text color="text/tertiary" size="9px" wrap={false}>
-                          ADDRESS
-                        </Text>
-                      </Column>
-                    </Columns>
-                  </Box>
-                  <Separator />
-                </VirtualList.Item>
-              )
-
-            if (layoutItem.type === 'loading')
-              return (
-                <VirtualList.Item {...item}>
-                  <Box
-                    display="flex"
-                    height="full"
-                    padding="8px"
-                    paddingVertical="12px"
-                  >
-                    <Text color="text/secondary" size="14px">
-                      Loading...
-                    </Text>
-                  </Box>
-                </VirtualList.Item>
-              )
-
-            const contract = contracts[layoutItem.index ?? 0] || {}
-            if (!contract) return
-            return (
-              <VirtualList.Item {...item}>
-                <Box marginHorizontal="-8px">
-                  <Separator />
-                </Box>
-                <VirtualList.Link to={`/contract/${contract.address}`}>
-                  <Box
-                    backgroundColor={{ hover: 'surface/fill/quarternary' }}
-                    paddingHorizontal="8px"
-                    paddingVertical="8px"
-                    style={{ minHeight: '40px' }}
-                  >
-                    <Columns
-                      alignHorizontal="justify"
-                      gap="4px"
-                      alignVertical="center"
+              if (layoutItem.type === 'header')
+                return (
+                  <VirtualList.Item {...item}>
+                    <Box
+                      display="flex"
+                      alignItems="center"
+                      height="full"
+                      paddingHorizontal="8px"
                       width="full"
                     >
-                      <Column alignVertical="center">
-                        <Stack gap="8px">
-                          {contract.address !== '0x' ? (
-                            <>
-                              <Text size="11px" wrap={false}>
-                                {contract.name || 'Unnamed Contract'}
-                              </Text>
+                      <Columns alignHorizontal="justify" gap="4px" width="full">
+                        <Column alignVertical="center">
+                          <Text color="text/tertiary" size="9px" wrap={false}>
+                            ADDRESS
+                          </Text>
+                        </Column>
+                      </Columns>
+                    </Box>
+                    <Separator />
+                  </VirtualList.Item>
+                )
+
+              if (layoutItem.type === 'loading')
+                return (
+                  <VirtualList.Item {...item}>
+                    <Box
+                      display="flex"
+                      height="full"
+                      padding="8px"
+                      paddingVertical="12px"
+                    >
+                      <Text color="text/secondary" size="14px">
+                        Loading...
+                      </Text>
+                    </Box>
+                  </VirtualList.Item>
+                )
+
+              const contract = contracts[layoutItem.index ?? 0] || {}
+              if (!contract) return
+              return (
+                <VirtualList.Item {...item}>
+                  <Box marginHorizontal="-8px">
+                    <Separator />
+                  </Box>
+                  <VirtualList.Link to={`/contract/${contract.address}`}>
+                    <Box
+                      backgroundColor={{ hover: 'surface/fill/quarternary' }}
+                      paddingHorizontal="8px"
+                      paddingVertical="8px"
+                      style={{ minHeight: '40px' }}
+                    >
+                      <Columns
+                        alignHorizontal="justify"
+                        gap="4px"
+                        alignVertical="center"
+                        width="full"
+                      >
+                        <Column alignVertical="center">
+                          <Stack gap="8px">
+                            {contract.address !== '0x' ? (
+                              <>
+                                <Inline gap="4px" alignVertical="center">
+                                  <Text size="11px" wrap={false}>
+                                    {contract.name || 'Unnamed Contract'}
+                                  </Text>
+                                  {!contract.visible && (
+                                    <Text color="text/tertiary" size="9px">
+                                      (hidden)
+                                    </Text>
+                                  )}
+                                </Inline>
+                                <Text
+                                  color="text/secondary"
+                                  size="9px"
+                                  wrap={false}
+                                >
+                                  {contract.address}
+                                </Text>
+                              </>
+                            ) : (
                               <Text
-                                color="text/secondary"
-                                size="9px"
+                                color="text/tertiary"
+                                size="11px"
                                 wrap={false}
                               >
-                                {contract.address}
+                                Deploying...
                               </Text>
-                            </>
-                          ) : (
-                            <Text
-                              color="text/tertiary"
-                              size="11px"
-                              wrap={false}
-                            >
-                              Deploying...
-                            </Text>
-                          )}
-                        </Stack>
-                      </Column>
-                      <Column alignVertical="center" width="content">
-                        <Button.Symbol
-                          label="Delete"
-                          symbol="trash"
-                          height="24px"
-                          variant="ghost red"
-                          onClick={(e) => {
-                            e.preventDefault()
-                            e.stopPropagation()
-                            hideContract({
-                              address: contract.address,
-                            })
-                          }}
-                        />
-                      </Column>
-                    </Columns>
-                  </Box>
-                </VirtualList.Link>
-              </VirtualList.Item>
-            )
-          })
-        }
-      </VirtualList>
-    </VirtualList.Wrapper>
+                            )}
+                          </Stack>
+                        </Column>
+                        <Column alignVertical="center" width="content">
+                          <Button.Symbol
+                            label="Delete"
+                            symbol="trash"
+                            height="24px"
+                            variant="ghost red"
+                            onClick={(e) => {
+                              e.preventDefault()
+                              e.stopPropagation()
+                              if (contract.visible) {
+                                hideContract({
+                                  address: contract.address,
+                                })
+                              } else {
+                                removeContract({
+                                  address: contract.address,
+                                })
+                              }
+                            }}
+                          />
+                        </Column>
+                      </Columns>
+                    </Box>
+                  </VirtualList.Link>
+                </VirtualList.Item>
+              )
+            })
+          }
+        </VirtualList>
+      </VirtualList.Wrapper>
+    </Stack>
   )
 }
 
@@ -1210,5 +1256,21 @@ function ImportContract() {
         )}
       </Inline>
     </Form.Root>
+  )
+}
+
+////////////////////////////////////////////////////////////////////////
+// Utilities
+
+function Utilities() {
+  return (
+    <Inset vertical="8px">
+      <Stack gap="12px">
+        <Text color="text/tertiary" size="9px">
+          EIP-7702 DELEGATION
+        </Text>
+        <Eip7702Utilities />
+      </Stack>
+    </Inset>
   )
 }

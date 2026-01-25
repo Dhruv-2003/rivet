@@ -13,6 +13,7 @@ import {
 import { privateKeyToAccount } from 'viem/accounts'
 import { type HttpRpcClient, getHttpRpcClient } from 'viem/utils'
 
+import { SIMPLE_ACCOUNT_7702 } from '~/constants/eip7702'
 import {
   UnauthorizedProviderError,
   UnsupportedProviderMethodError,
@@ -20,6 +21,11 @@ import {
 } from '~/errors'
 import { type Messenger, getMessenger } from '~/messengers'
 import type { RpcRequest, RpcResponse } from '~/types/rpc'
+import {
+  checkEip7702Support,
+  encodeExecuteBatch,
+  getDelegation,
+} from '~/utils/eip7702Utils'
 import {
   accountStore,
   batchCallsStore,
@@ -296,20 +302,48 @@ export function setupRpcHandler({ messenger }: { messenger: Messenger }) {
 
       if (request.method === 'wallet_getCapabilities') {
         const { networks } = networkStore.getState()
+        const { account } = accountStore.getState()
+
+        // Build capabilities for each network
+        const result: Record<string, unknown> = {}
+
+        for (const n of networks) {
+          if (n.chainId === -1) continue
+
+          // Determine atomic capability status
+          let atomicStatus: 'supported' | 'ready' | 'unsupported' =
+            'unsupported'
+
+          if (account) {
+            // Check if account is delegated to SimpleAccount7702
+            const delegatedTo = await getDelegation(
+              n.rpcUrl,
+              account.address as Address,
+            )
+            if (
+              delegatedTo &&
+              delegatedTo.toLowerCase() === SIMPLE_ACCOUNT_7702.toLowerCase()
+            ) {
+              atomicStatus = 'supported'
+            } else {
+              // Check if chain supports EIP-7702
+              const supportsEip7702 = await checkEip7702Support(n.rpcUrl)
+              if (supportsEip7702) {
+                atomicStatus = 'ready'
+              }
+            }
+          }
+
+          result[numberToHex(n.chainId)] = {
+            atomic: { status: atomicStatus },
+            paymasterService: { supported: false },
+          }
+        }
+
         return {
           id: request.id,
           jsonrpc: '2.0',
-          result: networks.reduce((capabilities, network) => {
-            if (network.chainId === -1) return capabilities
-            return {
-              ...capabilities,
-              [numberToHex(network.chainId)]: {
-                atomicBatch: {
-                  supported: false,
-                },
-              },
-            }
-          }, {}),
+          result,
         } as RpcResponse
       }
 
@@ -452,6 +486,13 @@ async function execute(
   if (request.method === 'eth_sendTransaction') {
     const [txParams] = request.params as [RpcTransactionRequest]
     const { from } = txParams
+    if (!from) {
+      return {
+        id: request.id,
+        jsonrpc: '2.0',
+        error: { code: -32602, message: 'Missing from address in transaction' },
+      } as RpcResponse
+    }
     const { accounts } = accountStore.getState()
     const account = accounts.find(
       (acc) => acc.address.toLowerCase() === from.toLowerCase(),
@@ -503,7 +544,7 @@ async function execute(
         const { addTransaction } = transactionStore.getState()
         addTransaction({
           hash,
-          from: txParams.from,
+          from: txParams.from || localAccount.address,
           to: txParams.to ?? undefined,
           value: txParams.value ? BigInt(txParams.value).toString() : undefined,
           data: txParams.data,
@@ -598,6 +639,7 @@ async function execute(
         id: request.id,
         rpcClient,
         networkType,
+        atomicRequired: request.params![0].atomicRequired,
       } as any)
     }
 
@@ -614,14 +656,16 @@ async function execute(
       const [txParams] = request.params as [RpcTransactionRequest]
       const { network } = networkStore.getState()
       const { accounts } = accountStore.getState()
-      const fromAccount = accounts.find(
-        (acc) => acc.address.toLowerCase() === txParams.from.toLowerCase(),
-      )
+      const fromAccount = txParams.from
+        ? accounts.find(
+            (acc) => acc.address.toLowerCase() === txParams.from!.toLowerCase(),
+          )
+        : undefined
       const { addTransaction } = transactionStore.getState()
       if (!fromAccount || fromAccount.type !== 'local') {
         addTransaction({
           hash: (response as any).result,
-          from: txParams.from,
+          from: txParams.from || '',
           to: txParams.to ?? undefined,
           value: txParams.value ? BigInt(txParams.value).toString() : undefined,
           data: txParams.data,
@@ -649,15 +693,85 @@ async function handleSendCalls({
   id,
   rpcClient,
   networkType,
+  atomicRequired = false,
 }: {
   calls: RpcTransactionRequest[]
   from: Address
   id: number
   rpcClient: HttpRpcClient
   networkType: 'anvil' | 'remote'
+  capabilities?: { atomic?: { required?: boolean } }
+  atomicRequired?: boolean
 }) {
   const { setBatch } = batchCallsStore.getState()
+  const { network } = networkStore.getState()
 
+  // Check if account is delegated to SimpleAccount7702
+  const delegatedTo = await getDelegation(network.rpcUrl, from)
+  const isDelegatedToSmart =
+    delegatedTo &&
+    delegatedTo.toLowerCase() === SIMPLE_ACCOUNT_7702.toLowerCase()
+
+  // If atomicRequired but not delegated, reject
+  if (atomicRequired && !isDelegatedToSmart) {
+    const supportsEip7702 = await checkEip7702Support(network.rpcUrl)
+    if (supportsEip7702) {
+      throw new Error(
+        'Atomic execution required but account is not delegated. Please delegate your account to SimpleAccount7702 via the Utilities tab first.',
+      )
+    }
+
+    throw new Error(
+      'Atomic execution required but this chain does not support EIP-7702 delegation.',
+    )
+  }
+
+  // If delegated, use atomic execution via executeBatch
+  if (isDelegatedToSmart) {
+    // Convert RPC calls to executeBatch format
+    const batchCalls = calls.map((call) => ({
+      target: (call.to ||
+        '0x0000000000000000000000000000000000000000') as Address,
+      value: call.value ? BigInt(call.value) : 0n,
+      data: (call.data || '0x') as Hex,
+    }))
+
+    // Encode the executeBatch call
+    const encodedData = encodeExecuteBatch(batchCalls)
+
+    // Send single transaction to account address with executeBatch calldata
+    const { result, error } = await rpcClient.request({
+      body: {
+        method: 'eth_sendTransaction',
+        params: [
+          {
+            from,
+            to: from, // Call ourselves (the delegated EOA)
+            data: encodedData,
+          },
+        ],
+      },
+    })
+
+    if (error) throw new Error(error.message)
+
+    const transactionHash = result as Hex
+    const batchId = keccak256(stringToHex(JSON.stringify([transactionHash])))
+    setBatch(batchId, { calls, transactionHashes: [transactionHash] })
+
+    return {
+      id,
+      jsonrpc: '2.0',
+      result: {
+        id: batchId,
+        capabilities: {
+          atomic: { status: 'supported' },
+        },
+      },
+    }
+  }
+
+  // Sequential fallback (existing behavior)
   // Simulate calls for errors (to ensure atomicity).
   for (const call of calls) {
     const { error } = await rpcClient.request({
@@ -721,7 +835,16 @@ async function handleSendCalls({
     const batchId = keccak256(stringToHex(JSON.stringify(transactionHashes)))
     setBatch(batchId, { calls, transactionHashes })
 
-    return { id, jsonrpc: '2.0', result: batchId }
+    return {
+      id,
+      jsonrpc: '2.0',
+      result: {
+        id: batchId,
+        capabilities: {
+          atomic: { status: 'unsupported' },
+        },
+      },
+    }
   } finally {
     // Re-enable automining (if previously enabled).
     if (automine?.result)

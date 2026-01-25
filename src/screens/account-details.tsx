@@ -11,7 +11,13 @@ import {
   parseUnits,
 } from 'viem'
 
-import { LabelledContent, TabsContent, TabsList, Tooltip } from '~/components'
+import {
+  LabelledContent,
+  SendTransactionForm,
+  TabsContent,
+  TabsList,
+  Tooltip,
+} from '~/components'
 import * as Form from '~/components/form'
 import { Spinner } from '~/components/svgs'
 import {
@@ -92,7 +98,7 @@ export default function AccountDetails() {
                 items={[
                   { label: 'Tokens', value: 'tokens' },
                   { label: 'Activity', value: 'activity' },
-                  // { label: 'NFTs', value: 'nfts' },
+                  { label: 'Send', value: 'send' },
                 ]}
                 onSelect={(item) => {
                   setParams({ tab: item.value })
@@ -104,9 +110,9 @@ export default function AccountDetails() {
               <TabsContent inset={false} value="activity">
                 <Activity accountAddress={address as Address} />
               </TabsContent>
-              {/* <TabsContent inset={false} value="nfts">
-              <NFTs />
-            </TabsContent> */}
+              <TabsContent inset={false} value="send">
+                <SendTransaction accountAddress={address as Address} />
+              </TabsContent>
             </Box>
           </Tabs.Root>
         </Stack>
@@ -159,6 +165,14 @@ function Activity({ accountAddress }: { accountAddress: Address }) {
           ))
         )}
       </Stack>
+    </Inset>
+  )
+}
+
+function SendTransaction({ accountAddress }: { accountAddress: Address }) {
+  return (
+    <Inset vertical="8px">
+      <SendTransactionForm from={accountAddress} />
     </Inset>
   )
 }

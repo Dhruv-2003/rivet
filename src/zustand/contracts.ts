@@ -11,6 +11,7 @@ type Contract = {
   abi?: Abi
   address: Address
   bytecode?: Hex | null
+  isAbiGuessed?: boolean
   name?: string
   key: string
   receipt?: TransactionReceipt

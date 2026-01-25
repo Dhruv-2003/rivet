@@ -658,6 +658,7 @@ export const symbolNames = [
   'backward.fill',
   'arrow.counterclockwise',
   'eye',
+  'paperplane',
 ] as const
 export type SymbolName = (typeof symbolNames)[number]
 
