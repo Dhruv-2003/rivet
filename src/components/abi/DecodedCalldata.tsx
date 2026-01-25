@@ -34,10 +34,11 @@ export function DecodedCalldata({
   const selector = slice(data, 0, 4)
 
   // Try extract ABI from whatsabi autoloading (etherscan, 4byte dbs, etc)
-  const { data: autoloadAbi } = useAutoloadAbi({
+  const { data: autoloadResult } = useAutoloadAbi({
     address,
     enabled: data && data !== '0x',
   })
+  const autoloadAbi = autoloadResult?.abi
 
   const { data: signature, isFetched } = useLookupSignature({
     selector,

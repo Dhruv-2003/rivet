@@ -71,7 +71,7 @@
     "remeda": "^1.14.0",
     "sonner": "^0.7.2",
     "use-sync-external-store": "^1.2.0",
-    "viem": "2.24.0",
+    "viem": "2.41.2",
     "zustand": "^4.3.8"
   },
   "devDependencies": {

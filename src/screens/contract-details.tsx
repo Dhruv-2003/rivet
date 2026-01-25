@@ -1,7 +1,7 @@
 import * as Tabs from '@radix-ui/react-tabs'
 import { useMutation } from '@tanstack/react-query'
 import type { Abi, AbiFunction } from 'abitype'
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useForm } from 'react-hook-form'
 import { useParams } from 'react-router'
 
@@ -35,14 +35,35 @@ export default function ContractDetails() {
 
   ////////////////////////////////////////////////////////////////////////
 
-  const { data: autoloadAbi, isLoading } = useAutoloadAbi({
+  const { data: autoloadResult, isLoading } = useAutoloadAbi({
     address: contract?.address,
     enabled: Boolean(!contract?.abi && contract?.address),
   })
-  console.log({ autoloadAbi })
+  const autoloadAbi = autoloadResult?.abi
+  const isAutoloadVerified = autoloadResult?.isVerified ?? false
+  const autoloadName = autoloadResult?.name
+
+  // Cache the autoloaded ABI and name in the contracts store
+  useEffect(() => {
+    if (autoloadAbi && contract?.address && !contract.abi) {
+      updateContract({
+        address: contract.address,
+        abi: autoloadAbi as Abi,
+        isAbiGuessed: !isAutoloadVerified,
+        ...(autoloadName && !contract.name ? { name: autoloadName } : {}),
+      })
+    }
+  }, [
+    autoloadAbi,
+    autoloadName,
+    isAutoloadVerified,
+    contract?.address,
+    contract?.abi,
+    contract?.name,
+    updateContract,
+  ])
 
   const abi = (contract?.abi || autoloadAbi) as Abi
-  console.log({ abi })
 
   const abiFunctions = useMemo(() => {
     if (!abi) return undefined
@@ -55,15 +76,17 @@ export default function ContractDetails() {
       })) as unknown as AbiFunction[]
   }, [abi])
 
-  const hasStateMutability = !abiFunctions?.some(
-    (abiItem) => !('stateMutability' in abiItem),
-  )
+  // If we have a contract.abi (from store/manual upload), use stored isAbiGuessed flag
+  // If we used autoload, check if whatsabi loaded it from a verified source
+  const isGuessedAbi = contract?.abi
+    ? contract.isAbiGuessed ?? false
+    : !isAutoloadVerified
 
-  const isGuessedAbi = !hasStateMutability
+  const isVerified = !isGuessedAbi
 
   const [readAbi, writeAbi] = useMemo(() => {
     if (!abiFunctions) return [undefined, undefined]
-    if (!hasStateMutability) return [undefined, undefined]
+    if (!isVerified) return [undefined, undefined]
     const read = abiFunctions.filter(
       (abiItem) =>
         'stateMutability' in abiItem &&
@@ -77,7 +100,7 @@ export default function ContractDetails() {
           abiItem.stateMutability === 'payable'),
     )
     return [read as unknown as AbiFunction[], write as unknown as AbiFunction[]]
-  }, [abiFunctions, hasStateMutability])
+  }, [abiFunctions, isVerified])
 
   ////////////////////////////////////////////////////////////////////////
 
@@ -136,7 +159,7 @@ export default function ContractDetails() {
         {abi && (
           <Tabs.Root asChild defaultValue="read">
             <Box display="flex" flexDirection="column" height="full">
-              {hasStateMutability ? (
+              {isVerified ? (
                 <>
                   <TabsList
                     items={[

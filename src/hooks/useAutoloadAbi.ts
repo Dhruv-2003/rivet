@@ -2,9 +2,7 @@ import { loaders, whatsabi } from '@shazow/whatsabi'
 import { queryOptions, useQuery } from '@tanstack/react-query'
 import type { Address, Client } from 'viem'
 import { createQueryKey } from '~/react-query'
-// import { etherscanApiUrls } from '../constants/etherscan'
-// import { BlockscoutABILoader } from '../utils/blockscoutAbiLoader'
-import { useSettingsStore } from '../zustand'
+import { useNetworkStore, useSettingsStore } from '../zustand'
 import { useClient } from './useClient'
 
 type AutoloadAbiParameters = {
@@ -22,6 +20,7 @@ export function useAutoloadAbiQueryOptions({
   enabled,
 }: AutoloadAbiParameters) {
   const client = useClient()
+  const { network } = useNetworkStore()
   const {
     abiLoaderConfigNonce,
     etherscanApiKey,
@@ -45,27 +44,35 @@ export function useAutoloadAbiQueryOptions({
         onError: (phase, context) =>
           console.error('whatsabi autoload error:', phase, context),
         abiLoader: new loaders.MultiABILoader([
-          new loaders.SourcifyABILoader({
-            chainId: client.chain.id,
-          }),
-          new loaders.EtherscanABILoader({
+          new loaders.EtherscanV2ABILoader({
             apiKey: etherscanApiKey?.trim() || '',
-            chainId: client.chain.id,
+            chainId: network.chainId,
           }),
-          new loaders.AnyABILoader(),
+          new loaders.AnyABILoader({
+            chainId: network.chainId,
+          }),
           new loaders.BlockscoutABILoader({
             baseURL: blockscoutApiUrl,
             apiKey: blockscoutApiKey?.trim() || undefined,
           }),
         ]),
+        enableExperimentalMetadata: true,
+        loadContractResult: true,
       })
       console.log({ result })
       if (!result.abi.some((item) => (item as { name?: string }).name))
         return null
-      return result.abi.map((abiItem) => ({
-        ...abiItem,
-        outputs: 'outputs' in abiItem && abiItem.outputs ? abiItem.outputs : [],
-      }))
+      return {
+        abi: result.abi.map((abiItem) => ({
+          ...abiItem,
+          outputs:
+            'outputs' in abiItem && abiItem.outputs ? abiItem.outputs : [],
+        })),
+        // If abiLoadedFrom is set, the ABI came from a verified source (Etherscan, Sourcify, etc.)
+        // If not set, the ABI was guessed from bytecode analysis
+        isVerified: !!result.abiLoadedFrom,
+        name: result.contractResult?.name,
+      }
     },
   })
 }
