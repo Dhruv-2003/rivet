@@ -4,6 +4,6 @@ import './Toaster.css'
 
 export function Toaster() {
   return (
-    <Toaster_ closeButton expand={false} richColors position="top-center" />
+    <Toaster_ closeButton expand={false} richColors position="bottom-center" />
   )
 }

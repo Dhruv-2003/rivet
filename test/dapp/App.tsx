@@ -779,7 +779,7 @@ function SendCalls() {
               },
               {
                 to: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8',
-                value: numberToHex(parseEther('2')),
+                value: numberToHex(parseEther('0.00002')),
               },
             ],
             chainId,

@@ -112,8 +112,7 @@ export function setupRpcHandler({ messenger }: { messenger: Messenger }) {
         }
       }
 
-      const { addPendingRequest, removePendingRequest } =
-        pendingRequestsStore.getState()
+      const { addPendingRequest } = pendingRequestsStore.getState()
 
       if (!session)
         return {
@@ -126,44 +125,17 @@ export function setupRpcHandler({ messenger }: { messenger: Messenger }) {
 
       addPendingRequest({ ...request, sender: meta.sender })
 
-      const response = await new Promise((resolve, reject) => {
-        walletMessenger.reply(
-          'pendingRequest',
-          async ({ request: pendingRequest, status }) => {
-            if (pendingRequest.id !== request.id) return
-
-            removePendingRequest(request.id)
-
-            if (status === 'rejected') {
-              resolve({
-                id: request.id,
-                jsonrpc: '2.0',
-                error: {
-                  code: UserRejectedRequestError.code,
-                  message: UserRejectedRequestError.message,
-                  data: { request },
-                },
-              } satisfies RpcResponse)
-              return
-            }
-
-            try {
-              const { id, method, params } = pendingRequest
-              const response = await execute(
-                rpcClient,
-                {
-                  method,
-                  params,
-                  id,
-                } as RpcRequest,
-                networkType,
-              )
-              resolve(response)
-            } catch (err) {
-              reject(err)
-            }
-          },
-        )
+      const response = await new Promise<RpcResponse>((resolve, reject) => {
+        // Register this promise in the global map so the handler can resolve it
+        const pendingPromises = (globalThis as any).__rivetPendingPromises
+        if (pendingPromises) {
+          pendingPromises.set(request.id, {
+            resolve,
+            reject,
+            rpcClient,
+            networkType,
+          })
+        }
       })
       return response as RpcResponse
     }
@@ -206,13 +178,20 @@ export function setupRpcHandler({ messenger }: { messenger: Messenger }) {
         addPendingRequest({ ...request, sender: meta.sender })
 
         try {
-          const response = await new Promise((resolve) => {
-            walletMessenger.reply(
-              'pendingRequest',
-              async ({ request: pendingRequest, status }) => {
-                if (pendingRequest.id !== request.id) return
-
-                if (status === 'rejected') {
+          const response = await new Promise<RpcResponse>((resolve) => {
+            // Register this promise for eth_requestAccounts
+            const pendingPromises = (globalThis as any).__rivetPendingPromises
+            if (pendingPromises) {
+              pendingPromises.set(request.id, {
+                resolve: (response: RpcResponse) => {
+                  // For requestAccounts, if approved, call authorize
+                  if ('result' in response || 'error' in response) {
+                    resolve(response)
+                  } else {
+                    resolve(authorize())
+                  }
+                },
+                reject: () => {
                   resolve({
                     id: request.id,
                     jsonrpc: '2.0',
@@ -222,12 +201,11 @@ export function setupRpcHandler({ messenger }: { messenger: Messenger }) {
                       data: { request },
                     },
                   } satisfies RpcResponse)
-                  return
-                }
-
-                resolve(authorize())
-              },
-            )
+                },
+                // Store authorize function for later use
+                customHandler: authorize,
+              })
+            }
           })
           return response as RpcResponse
         } finally {
@@ -552,7 +530,10 @@ async function execute(
           timestamp: Date.now(),
         })
 
-        walletMessenger.send('transactionExecuted', undefined)
+        walletMessenger.send('transactionExecuted', {
+          hash,
+          chainId: network.chainId,
+        })
         return {
           id: request.id,
           jsonrpc: '2.0',
@@ -674,7 +655,11 @@ async function execute(
         })
       }
     }
-    walletMessenger.send('transactionExecuted', undefined)
+    const { network: currentNetwork } = networkStore.getState()
+    walletMessenger.send('transactionExecuted', {
+      hash: (response as { result?: string }).result,
+      chainId: currentNetwork.chainId,
+    })
   }
 
   if ((response as { success?: boolean }).success === false)
@@ -694,6 +679,9 @@ async function handleSendCalls({
   rpcClient,
   networkType,
   atomicRequired = false,
+  maxFeePerGas,
+  maxPriorityFeePerGas,
+  nonce,
 }: {
   calls: RpcTransactionRequest[]
   from: Address
@@ -702,6 +690,9 @@ async function handleSendCalls({
   networkType: 'anvil' | 'remote'
   capabilities?: { atomic?: { required?: boolean } }
   atomicRequired?: boolean
+  maxFeePerGas?: Hex
+  maxPriorityFeePerGas?: Hex
+  nonce?: Hex
 }) {
   const { setBatch } = batchCallsStore.getState()
   const { network } = networkStore.getState()
@@ -736,28 +727,101 @@ async function handleSendCalls({
       data: (call.data || '0x') as Hex,
     }))
 
+    // Calculate total value to send with the transaction
+    const totalValue = batchCalls.reduce((sum, call) => sum + call.value, 0n)
+
     // Encode the executeBatch call
     const encodedData = encodeExecuteBatch(batchCalls)
 
-    // Send single transaction to account address with executeBatch calldata
-    const { result, error } = await rpcClient.request({
-      body: {
-        method: 'eth_sendTransaction',
-        params: [
-          {
-            from,
-            to: from, // Call ourselves (the delegated EOA)
-            data: encodedData,
+    let transactionHash: Hex
+
+    // For remote networks, we need to sign and send raw transaction
+    // because remote RPCs don't support eth_sendTransaction
+    if (networkType === 'remote') {
+      const { accounts } = accountStore.getState()
+      const account = accounts.find(
+        (acc) => acc.address.toLowerCase() === from.toLowerCase(),
+      )
+
+      if (account?.type === 'local' && 'privateKey' in account) {
+        // Sign with local account and send raw transaction
+        const localAccount = privateKeyToAccount(account.privateKey as Hex)
+        const chain = {
+          id: network.chainId,
+          name: (network as any).name ?? 'Unknown',
+          nativeCurrency: (network as any).nativeCurrency ?? {
+            decimals: 18,
+            name: 'Ether',
+            symbol: 'ETH',
           },
-        ],
-      },
-    })
+          rpcUrls: {
+            default: { http: [network.rpcUrl] },
+          },
+        } as any
 
-    if (error) throw new Error(error.message)
+        const client = createWalletClient({
+          account: localAccount,
+          chain,
+          transport: http(network.rpcUrl),
+        })
 
-    const transactionHash = result as Hex
+        transactionHash = await client.sendTransaction({
+          to: from, // Call ourselves (the delegated EOA)
+          data: encodedData,
+          value: totalValue,
+          chain: null,
+          maxFeePerGas: maxFeePerGas ? BigInt(maxFeePerGas) : undefined,
+          maxPriorityFeePerGas: maxPriorityFeePerGas
+            ? BigInt(maxPriorityFeePerGas)
+            : undefined,
+          nonce: nonce ? Number.parseInt(nonce, 16) : undefined,
+        })
+      } else {
+        throw new Error(
+          'Cannot send batched calls on remote network with non-local account. For remote networks, EIP-5792 batch calls require a locally-imported private key.',
+        )
+      }
+    } else {
+      // Anvil supports eth_sendTransaction directly
+      const { result, error } = await rpcClient.request({
+        body: {
+          method: 'eth_sendTransaction',
+          params: [
+            {
+              from,
+              to: from, // Call ourselves (the delegated EOA)
+              data: encodedData,
+              value: totalValue > 0n ? numberToHex(totalValue) : undefined,
+              maxFeePerGas,
+              maxPriorityFeePerGas,
+              nonce,
+            },
+          ],
+        },
+      })
+
+      if (error) throw new Error(error.message)
+      transactionHash = result as Hex
+    }
+
     const batchId = keccak256(stringToHex(JSON.stringify([transactionHash])))
     setBatch(batchId, { calls, transactionHashes: [transactionHash] })
+
+    // Store the transaction in activity
+    const { addTransaction } = transactionStore.getState()
+    addTransaction({
+      hash: transactionHash,
+      from,
+      to: from, // Self-call for executeBatch
+      data: encodedData,
+      chainId: network.chainId,
+      timestamp: Date.now(),
+    })
+
+    walletMessenger.send('transactionExecuted', {
+      hash: transactionHash,
+      chainId: network.chainId,
+    })
 
     return {
       id,
@@ -857,9 +921,115 @@ async function handleSendCalls({
   }
 }
 
-export function setupPendingRequestCleanup() {
-  walletMessenger.reply('pendingRequest', async ({ request }) => {
+// Handle pending requests initiated from the wallet UI (not from inpage)
+// This is a global handler that processes all pending request approvals/rejections
+export function setupWalletPendingRequestHandler() {
+  const pendingPromises = new Map<
+    number,
+    {
+      resolve: (value: RpcResponse) => void
+      reject: (error: Error) => void
+      rpcClient?: HttpRpcClient
+      networkType?: 'anvil' | 'remote'
+      customHandler?: () => RpcResponse
+    }
+  >()
+
+  // Expose a way to register promises for inpage-initiated requests
+  ;(globalThis as any).__rivetPendingPromises = pendingPromises
+
+  walletMessenger.reply('pendingRequest', async ({ request, status }) => {
     const { removePendingRequest } = pendingRequestsStore.getState()
     removePendingRequest(request.id)
+
+    // Check if this is an inpage-initiated request (has a promise waiting)
+    const pendingPromise = pendingPromises.get(request.id)
+
+    if (pendingPromise) {
+      // Inpage-initiated request - resolve/reject the promise
+      const { resolve, reject, rpcClient, networkType, customHandler } =
+        pendingPromise
+      pendingPromises.delete(request.id)
+
+      if (status === 'rejected') {
+        if (reject) {
+          reject(new Error('User rejected request'))
+        } else {
+          resolve({
+            id: request.id,
+            jsonrpc: '2.0',
+            error: {
+              code: UserRejectedRequestError.code,
+              message: UserRejectedRequestError.message,
+              data: { request },
+            },
+          } satisfies RpcResponse)
+        }
+        return
+      }
+
+      // Handle special case for eth_requestAccounts
+      if (customHandler) {
+        resolve(customHandler())
+        return
+      }
+
+      // Handle normal requests
+      if (!rpcClient || !networkType) {
+        reject?.(new Error('Missing rpcClient or networkType'))
+        return
+      }
+
+      try {
+        const { id, method, params } = request
+        const response = await execute(
+          rpcClient,
+          { method, params, id } as RpcRequest,
+          networkType,
+        )
+        resolve(response)
+      } catch (err) {
+        reject?.(err as Error)
+      }
+    } else {
+      // Wallet-initiated request - execute directly
+      if (status === 'rejected') {
+        // Send rejection notification
+        walletMessenger.send('requestResult', {
+          requestId: request.id,
+          error: 'User rejected request',
+        })
+        return
+      }
+
+      const { network } = networkStore.getState()
+      const rpcClient = getHttpRpcClient(network.rpcUrl)
+      const networkType = network.type || 'anvil'
+
+      try {
+        const response = await execute(
+          rpcClient,
+          request as RpcRequest,
+          networkType,
+        )
+
+        // Send result back to wallet UI
+        if ('result' in response && response.result) {
+          walletMessenger.send('requestResult', {
+            requestId: request.id,
+            result:
+              typeof response.result === 'string'
+                ? response.result
+                : JSON.stringify(response.result),
+          })
+        }
+      } catch (error) {
+        console.error('Failed to execute wallet-initiated request:', error)
+        walletMessenger.send('requestResult', {
+          requestId: request.id,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        })
+      }
+    }
   })
 }

@@ -139,8 +139,8 @@ export function init({ type = 'standalone' }: { type?: AppMeta['type'] } = {}) {
     setTheme(theme === 'dark' ? 'light' : 'dark')
   })
 
-  // Handle executed transactions to invalidate stale queries.
-  backgroundMessenger.reply('transactionExecuted', async () => {
+  // Handle executed transactions to invalidate stale queries and show toast.
+  backgroundMessenger.reply('transactionExecuted', async (data) => {
     const {
       network: { rpcUrl },
     } = networkStore.getState()
@@ -155,6 +155,63 @@ export function init({ type = 'standalone' }: { type?: AppMeta['type'] } = {}) {
     queryClient.invalidateQueries({
       queryKey: getTxpoolQueryKey([client.key]),
     })
+
+    // Show toast for transaction with polling for receipt
+    if (data?.hash) {
+      const { toast } = await import('sonner')
+      const truncatedHash = `${data.hash.slice(0, 10)}...${data.hash.slice(-8)}`
+
+      // Show loading toast
+      const toastId = toast.loading('Transaction Pending', {
+        description: truncatedHash,
+      })
+
+      // Poll for receipt with configurable interval based on block time
+      // Use shorter interval for local (anvil) and longer for remote
+      const { network } = networkStore.getState()
+      const pollInterval = network.type === 'remote' ? 5000 : 1000
+      const maxAttempts = 60 // Max 60 attempts (1-5 minutes depending on interval)
+
+      let attempts = 0
+      const pollForReceipt = async () => {
+        attempts++
+        try {
+          const receipt = await client.getTransactionReceipt({
+            hash: data.hash as `0x${string}`,
+          })
+
+          if (receipt) {
+            if (receipt.status === 'success') {
+              toast.success('Transaction Confirmed', {
+                id: toastId,
+                description: truncatedHash,
+              })
+            } else {
+              toast.error('Transaction Failed', {
+                id: toastId,
+                description: truncatedHash,
+              })
+            }
+            return // Stop polling
+          }
+        } catch (_error) {
+          // Receipt not found yet, continue polling
+        }
+
+        if (attempts < maxAttempts) {
+          setTimeout(pollForReceipt, pollInterval)
+        } else {
+          // Max attempts reached, show info message
+          toast('Transaction Status Unknown', {
+            id: toastId,
+            description: `${truncatedHash} - Check Activity for status`,
+          })
+        }
+      }
+
+      // Start polling
+      setTimeout(pollForReceipt, pollInterval)
+    }
   })
 
   ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(

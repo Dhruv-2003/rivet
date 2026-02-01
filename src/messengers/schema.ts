@@ -27,5 +27,12 @@ export type Schema = {
     response: RpcResponse,
   ]
   toggleTheme: [payload: void, response: void]
-  transactionExecuted: [payload: void, response: void]
+  transactionExecuted: [
+    payload: { hash?: string; chainId?: number } | undefined,
+    response: void,
+  ]
+  requestResult: [
+    payload: { requestId: number; result?: string; error?: string },
+    response: void,
+  ]
 }
