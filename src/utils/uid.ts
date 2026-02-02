@@ -13,13 +13,9 @@ export function uid(length = 11) {
   return buffer.substring(index, index++ + length)
 }
 
-let lastId = Date.now()
 export function getUniqueId() {
-  const id = Date.now()
-  if (id <= lastId) {
-    lastId++
-    return lastId
-  }
-  lastId = id
-  return lastId
+  const time = Date.now()
+  const rand = Math.floor(Math.random() * 1000)
+  // Combine timestamp with a small random component; result stays within Number.MAX_SAFE_INTEGER.
+  return time * 1000 + rand
 }

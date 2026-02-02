@@ -279,6 +279,10 @@ function TransactionToastListener() {
 
         // Show toast for transaction with polling for receipt
         if (data?.hash) {
+          // Clear any existing timeout for this hash
+          const existingTimeout = pollTimeouts.get(data.hash)
+          if (existingTimeout) clearTimeout(existingTimeout)
+
           const { toast } = await import('sonner')
           const truncatedHash = `${data.hash.slice(0, 10)}...${data.hash.slice(
             -8,
