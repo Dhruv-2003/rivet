@@ -10,6 +10,10 @@ on:
         description: 'Branch to release from'
         required: true
         default: 'main'
+      notes:
+        description: 'Release Notes / Changes'
+        required: false
+        default: 'No specific changes detailed.'
 
 jobs:
   experimental-release:
@@ -41,6 +45,11 @@ jobs:
             **Version:** `v0.0.0-${{ github.event.inputs.version }}`
             **Branch:** `${{ github.event.inputs.branch }}`
             **Commit:** `${{ github.sha }}`
+            
+            ---
+
+            ### 📝 Changes
+            ${{ github.event.inputs.notes }}
             
             ---
             
