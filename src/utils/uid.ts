@@ -12,3 +12,14 @@ export function uid(length = 11) {
   }
   return buffer.substring(index, index++ + length)
 }
+
+let lastId = Date.now()
+export function getUniqueId() {
+  const id = Date.now()
+  if (id <= lastId) {
+    lastId++
+    return lastId
+  }
+  lastId = id
+  return lastId
+}

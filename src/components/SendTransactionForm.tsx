@@ -15,6 +15,7 @@ import * as Form from '~/components/form'
 import { Box, Button, Inline, Stack, Text } from '~/design-system'
 import { useBalance } from '~/hooks/useBalance'
 import { getMessenger } from '~/messengers'
+import { getUniqueId } from '~/utils'
 import { pendingRequestsStore } from '~/zustand'
 
 type SendTransactionFormData = {
@@ -87,7 +88,7 @@ export function SendTransactionForm({
 
   const submit = handleSubmit(({ to, value, data }) => {
     // Generate unique request ID
-    const requestId = Date.now()
+    const requestId = getUniqueId()
 
     // Create the transaction request params
     const txParams: RpcTransactionRequest = {

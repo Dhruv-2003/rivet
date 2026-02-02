@@ -15,7 +15,6 @@ import {
   formatTransaction,
   formatTransactionRequest,
   hexToString,
-  isHex,
   numberToHex,
   parseEther,
   parseGwei,
@@ -106,8 +105,6 @@ function PendingRequestContainer({
   onApprove(): void
   onReject(): void
 }) {
-  const { removePendingRequest } = usePendingRequestsStore()
-
   return (
     <Container
       header={
@@ -122,11 +119,19 @@ function PendingRequestContainer({
             label="Close (Emergency Exit)"
             height="24px"
             onClick={() => {
-              // Emergency exit - remove pending request without approval/rejection
+              // Emergency exit - send rejection response and locally remove
               const firstRequest =
                 pendingRequestsStore.getState().pendingRequests[0]
               if (firstRequest) {
-                removePendingRequest(firstRequest.id)
+                // Signal background to reject (handles waiting promises)
+                backgroundMessenger.send('pendingRequest', {
+                  request: firstRequest,
+                  status: 'rejected',
+                })
+                // Immediately remove locally to ensure UI updates
+                pendingRequestsStore
+                  .getState()
+                  .removePendingRequest(firstRequest.id)
               }
             }}
             symbol="xmark"
@@ -203,7 +208,10 @@ function SendCallsRequest(args: {
     // Serialize the transaction request into RPC format (hex).
     const serializedCalls = preparedCallQueries.map((query) =>
       query.data
-        ? omitBy(formatTransactionRequest(query.data), (value) => !isHex(value))
+        ? omitBy(
+            formatTransactionRequest(query.data),
+            (value) => value === undefined || value === null,
+          )
         : {},
     )
 
@@ -585,7 +593,9 @@ function SendTransactionRequest(args: {
   const handleApprove = async () => {
     // Serialize the transaction request into RPC format (hex).
     const txRequest = formatTransactionRequest(request)
-    const params = [omitBy(txRequest, (value) => !isHex(value))]
+    const params = [
+      omitBy(txRequest, (value) => value === undefined || value === null),
+    ]
 
     await backgroundMessenger.send('pendingRequest', {
       request: { ...args.request, params: params as any },

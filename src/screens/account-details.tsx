@@ -46,6 +46,7 @@ import { useErc20Balance } from '~/hooks/useErc20Balance'
 import { useErc20Metadata } from '~/hooks/useErc20Metadata'
 import { useSetErc20Balance } from '~/hooks/useSetErc20Balance'
 import { getMessenger } from '~/messengers'
+import { getUniqueId } from '~/utils'
 import {
   pendingRequestsStore,
   useAccountStore,
@@ -180,7 +181,7 @@ function SignMessage({ accountAddress }: { accountAddress: Address }) {
 
   const handleSign = () => {
     setSignature(null)
-    const requestId = Date.now()
+    const requestId = getUniqueId()
 
     if (isTypedData) {
       // For typed data, expect JSON input

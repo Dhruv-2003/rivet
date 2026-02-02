@@ -134,6 +134,7 @@ export function setupRpcHandler({ messenger }: { messenger: Messenger }) {
             reject,
             rpcClient,
             networkType,
+            timestamp: Date.now(),
           })
         }
       })
@@ -204,6 +205,7 @@ export function setupRpcHandler({ messenger }: { messenger: Messenger }) {
                 },
                 // Store authorize function for later use
                 customHandler: authorize,
+                timestamp: Date.now(),
               })
             }
           })
@@ -932,8 +934,21 @@ export function setupWalletPendingRequestHandler() {
       rpcClient?: HttpRpcClient
       networkType?: 'anvil' | 'remote'
       customHandler?: () => RpcResponse
+      timestamp: number
     }
   >()
+
+  // Cleanup stale entries every minute
+  setInterval(() => {
+    const now = Date.now()
+    for (const [id, promise] of pendingPromises.entries()) {
+      // 5 minute timeout
+      if (now - promise.timestamp > 5 * 60 * 1000) {
+        promise.reject(new Error('Request timed out'))
+        pendingPromises.delete(id)
+      }
+    }
+  }, 60 * 1000)
 
   // Expose a way to register promises for inpage-initiated requests
   ;(globalThis as any).__rivetPendingPromises = pendingPromises
