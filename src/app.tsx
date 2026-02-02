@@ -139,24 +139,6 @@ export function init({ type = 'standalone' }: { type?: AppMeta['type'] } = {}) {
     setTheme(theme === 'dark' ? 'light' : 'dark')
   })
 
-  // Handle executed transactions to invalidate stale queries.
-  backgroundMessenger.reply('transactionExecuted', async () => {
-    const {
-      network: { rpcUrl },
-    } = networkStore.getState()
-    const client = getClient({ rpcUrl })
-
-    queryClient.invalidateQueries({
-      queryKey: getPendingBlockQueryKey([client.key]),
-    })
-    queryClient.invalidateQueries({
-      queryKey: getPendingTransactionsQueryKey([client.key]),
-    })
-    queryClient.invalidateQueries({
-      queryKey: getTxpoolQueryKey([client.key]),
-    })
-  })
-
   ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
     <AppMetaContext.Provider value={{ type }}>
       <QueryClientProvider>
@@ -165,6 +147,7 @@ export function init({ type = 'standalone' }: { type?: AppMeta['type'] } = {}) {
         <SyncBlockNumber />
         <SyncJsonRpcAccounts />
         <SyncNetwork />
+        <TransactionToastListener />
         <RouterProvider router={router} />
       </QueryClientProvider>
     </AppMetaContext.Provider>,
@@ -265,6 +248,112 @@ function SyncNetwork() {
       })
     }
   }, [prevListening, listening, client.key])
+
+  return null
+}
+
+/** Handles transaction execution results (invalidating queries + showing toasts) */
+function TransactionToastListener() {
+  useEffect(() => {
+    const backgroundMessenger = getMessenger('background:wallet')
+    const pollTimeouts = new Map<string, NodeJS.Timeout>()
+
+    const unreply = backgroundMessenger.reply(
+      'transactionExecuted',
+      async (data?: { hash?: string; chainId?: number }) => {
+        if (!data) return
+        const {
+          network: { rpcUrl },
+        } = networkStore.getState()
+        const client = getClient({ rpcUrl })
+
+        queryClient.invalidateQueries({
+          queryKey: getPendingBlockQueryKey([client.key]),
+        })
+        queryClient.invalidateQueries({
+          queryKey: getPendingTransactionsQueryKey([client.key]),
+        })
+        queryClient.invalidateQueries({
+          queryKey: getTxpoolQueryKey([client.key]),
+        })
+
+        // Show toast for transaction with polling for receipt
+        if (data?.hash) {
+          // Clear any existing timeout for this hash
+          const existingTimeout = pollTimeouts.get(data.hash)
+          if (existingTimeout) clearTimeout(existingTimeout)
+
+          const { toast } = await import('sonner')
+          const truncatedHash = `${data.hash.slice(0, 10)}...${data.hash.slice(
+            -8,
+          )}`
+
+          // Show loading toast
+          const toastId = toast.loading('Transaction Pending', {
+            description: truncatedHash,
+          })
+
+          // Poll for receipt with configurable interval based on block time
+          // Use shorter interval for local (anvil) and longer for remote
+          const { network } = networkStore.getState()
+          const pollInterval = network.type === 'remote' ? 5000 : 1000
+          const maxAttempts = 60 // Max 60 attempts (1-5 minutes depending on interval)
+
+          let attempts = 0
+          const pollForReceipt = async () => {
+            attempts++
+            try {
+              const receipt = await client.getTransactionReceipt({
+                hash: data.hash as `0x${string}`,
+              })
+
+              if (receipt) {
+                if (receipt.status === 'success') {
+                  toast.success('Transaction Confirmed', {
+                    id: toastId,
+                    description: truncatedHash,
+                  })
+                } else {
+                  toast.error('Transaction Failed', {
+                    id: toastId,
+                    description: truncatedHash,
+                  })
+                }
+                pollTimeouts.delete(data.hash!)
+                return // Stop polling
+              }
+            } catch (_error) {
+              // Receipt not found yet, continue polling
+            }
+
+            if (attempts < maxAttempts) {
+              const timeout = setTimeout(pollForReceipt, pollInterval)
+              pollTimeouts.set(data.hash!, timeout)
+            } else {
+              // Max attempts reached, show info message
+              toast('Transaction Status Unknown', {
+                id: toastId,
+                description: `${truncatedHash} - Check Activity for status`,
+              })
+              pollTimeouts.delete(data.hash!)
+            }
+          }
+
+          // Start polling
+          const timeout = setTimeout(pollForReceipt, pollInterval)
+          pollTimeouts.set(data.hash, timeout)
+        }
+      },
+    )
+
+    return () => {
+      unreply()
+      for (const timeout of pollTimeouts.values()) {
+        clearTimeout(timeout)
+      }
+      pollTimeouts.clear()
+    }
+  }, [])
 
   return null
 }

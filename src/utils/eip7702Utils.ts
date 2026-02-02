@@ -1,5 +1,7 @@
 import { type Address, type Hex, encodeFunctionData } from 'viem'
 
+import { getUniqueId } from '~/utils'
+
 import { simple7702AccountAbi } from '~/constants/abi'
 import {
   EIP7702_DELEGATION_PREFIX,
@@ -59,7 +61,7 @@ export async function checkEip7702Support(rpcUrl: string): Promise<boolean> {
             },
           },
         ],
-        id: Date.now(),
+        id: getUniqueId(),
       }),
     })
 
@@ -101,7 +103,7 @@ async function getBytecode(
         jsonrpc: '2.0',
         method: 'eth_getCode',
         params: [address, 'latest'],
-        id: Date.now(),
+        id: getUniqueId(),
       }),
     })
 

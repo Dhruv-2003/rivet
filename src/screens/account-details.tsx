@@ -1,7 +1,12 @@
 import * as Tabs from '@radix-ui/react-tabs'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import {
+  useLocation,
+  useNavigate,
+  useParams,
+  useSearchParams,
+} from 'react-router-dom'
 import { toast } from 'sonner'
 import {
   type Address,
@@ -9,6 +14,7 @@ import {
   formatUnits,
   isAddress,
   parseUnits,
+  stringToHex,
 } from 'viem'
 
 import {
@@ -39,7 +45,10 @@ import { useAccountTokens } from '~/hooks/useAccountTokens'
 import { useErc20Balance } from '~/hooks/useErc20Balance'
 import { useErc20Metadata } from '~/hooks/useErc20Metadata'
 import { useSetErc20Balance } from '~/hooks/useSetErc20Balance'
+import { getMessenger } from '~/messengers'
+import { getUniqueId } from '~/utils'
 import {
+  pendingRequestsStore,
   useAccountStore,
   useNetworkStore,
   useTransactionStore,
@@ -51,8 +60,19 @@ export default function AccountDetails() {
   const navigate = useNavigate()
   const { accounts } = useAccountStore()
 
+  const location = useLocation()
+
   const account = accounts.find((x) => x.address === address)
   const privateKey = account?.type === 'local' ? account.privateKey : undefined
+
+  // Navigate to home if history stack is shallow (likely came from transaction details)
+  const handleBack = () => {
+    if (location.key === 'default' || window.history.length <= 2) {
+      navigate('/')
+    } else {
+      navigate(-1)
+    }
+  }
 
   if (!address) return null
   return (
@@ -62,7 +82,7 @@ export default function AccountDetails() {
           <Inline gap="4px">
             <Button.Symbol
               label="Back"
-              onClick={() => navigate(-1)}
+              onClick={handleBack}
               symbol="chevron.left"
               height="24px"
               variant="ghost primary"
@@ -99,6 +119,7 @@ export default function AccountDetails() {
                   { label: 'Tokens', value: 'tokens' },
                   { label: 'Activity', value: 'activity' },
                   { label: 'Send', value: 'send' },
+                  { label: 'Sign', value: 'sign' },
                 ]}
                 onSelect={(item) => {
                   setParams({ tab: item.value })
@@ -113,11 +134,191 @@ export default function AccountDetails() {
               <TabsContent inset={false} value="send">
                 <SendTransaction accountAddress={address as Address} />
               </TabsContent>
+              <TabsContent inset={false} value="sign">
+                <SignMessage accountAddress={address as Address} />
+              </TabsContent>
             </Box>
           </Tabs.Root>
         </Stack>
       </Inset>
     </>
+  )
+}
+
+function SignMessage({ accountAddress }: { accountAddress: Address }) {
+  const [message, setMessage] = useState('')
+  const [signature, setSignature] = useState<string | null>(null)
+  const [isTypedData, setIsTypedData] = useState(false)
+  const [pendingRequestId, setPendingRequestId] = useState<number | null>(null)
+  const pendingRequestIdRef = useRef<number | null>(null)
+
+  // Listen for request results (set up once)
+  useEffect(() => {
+    const backgroundMessenger = getMessenger('background:wallet')
+
+    const handler = async ({
+      requestId,
+      result,
+      error,
+    }: { requestId: number; result?: string; error?: string }) => {
+      if (pendingRequestIdRef.current === requestId) {
+        if (result) {
+          setSignature(result)
+        } else if (error) {
+          toast.error(`Signing failed: ${error}`)
+        }
+        pendingRequestsStore.getState().removePendingRequest(requestId)
+        setPendingRequestId(null)
+      }
+    }
+
+    return backgroundMessenger.reply('requestResult', handler)
+  }, [])
+
+  useEffect(() => {
+    pendingRequestIdRef.current = pendingRequestId
+  }, [pendingRequestId])
+
+  const handleSign = () => {
+    setSignature(null)
+    const requestId = getUniqueId()
+
+    if (isTypedData) {
+      // For typed data, expect JSON input
+      try {
+        const typedData = JSON.parse(message)
+        setPendingRequestId(requestId)
+        pendingRequestsStore.getState().addPendingRequest({
+          id: requestId,
+          method: 'eth_signTypedData_v4',
+          params: [accountAddress, JSON.stringify(typedData)],
+        })
+      } catch (_e) {
+        toast.error('Invalid JSON for typed data')
+        return
+      }
+    } else {
+      // For personal_sign, convert message to hex
+      const hexMessage = stringToHex(message)
+      setPendingRequestId(requestId)
+      pendingRequestsStore.getState().addPendingRequest({
+        id: requestId,
+        method: 'personal_sign',
+        params: [hexMessage, accountAddress],
+      })
+    }
+  }
+
+  return (
+    <Inset vertical="8px">
+      <Stack gap="16px">
+        <Box>
+          <Inline gap="8px" alignVertical="center">
+            <Text size="11px" color="text/tertiary">
+              Message Type:
+            </Text>
+            <Box
+              as="button"
+              type="button"
+              onClick={() => setIsTypedData(false)}
+              style={{
+                background: isTypedData ? 'transparent' : 'var(--surface-fill)',
+                border: '1px solid var(--surface-invert-@15)',
+                borderRadius: '4px',
+                padding: '4px 8px',
+                cursor: 'pointer',
+              }}
+            >
+              <Text size="11px" color={isTypedData ? 'text/tertiary' : 'text'}>
+                Personal Sign
+              </Text>
+            </Box>
+            <Box
+              as="button"
+              type="button"
+              onClick={() => setIsTypedData(true)}
+              style={{
+                background: isTypedData ? 'var(--surface-fill)' : 'transparent',
+                border: '1px solid var(--surface-invert-@15)',
+                borderRadius: '4px',
+                padding: '4px 8px',
+                cursor: 'pointer',
+              }}
+            >
+              <Text size="11px" color={isTypedData ? 'text' : 'text/tertiary'}>
+                Typed Data (v4)
+              </Text>
+            </Box>
+          </Inline>
+        </Box>
+
+        <Box>
+          <Text
+            size="9px"
+            color="text/tertiary"
+            style={{ marginBottom: '4px' }}
+          >
+            {isTypedData ? 'TYPED DATA (JSON)' : 'MESSAGE'}
+          </Text>
+          <Box
+            as="textarea"
+            value={message}
+            onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
+              setMessage(e.target.value)
+            }
+            placeholder={
+              isTypedData
+                ? '{\n  "types": { ... },\n  "domain": { ... },\n  "primaryType": "...",\n  "message": { ... }\n}'
+                : 'Enter message to sign...'
+            }
+            style={{
+              width: '100%',
+              minHeight: isTypedData ? '120px' : '60px',
+              padding: '8px',
+              border: '1px solid var(--surface-invert-@15)',
+              borderRadius: '4px',
+              background: 'var(--surface-secondary)',
+              color: 'var(--text)',
+              fontSize: '12px',
+              fontFamily: 'inherit',
+              resize: 'vertical',
+            }}
+          />
+        </Box>
+
+        <Button
+          height="24px"
+          variant="stroked fill"
+          width="fit"
+          onClick={handleSign}
+          disabled={!message}
+        >
+          Sign Message
+        </Button>
+
+        {signature && (
+          <Stack gap="8px">
+            <Text size="9px" color="text/tertiary">
+              SIGNATURE
+            </Text>
+            <Inline gap="8px" alignVertical="center" wrap={false}>
+              <Text size="11px" style={{ wordBreak: 'break-all', flex: 1 }}>
+                {signature}
+              </Text>
+              <Button.Symbol
+                height="20px"
+                label="Copy"
+                onClick={() => {
+                  navigator.clipboard.writeText(signature)
+                }}
+                symbol="doc.on.doc"
+                variant="ghost primary"
+              />
+            </Inline>
+          </Stack>
+        )}
+      </Stack>
+    </Inset>
   )
 }
 

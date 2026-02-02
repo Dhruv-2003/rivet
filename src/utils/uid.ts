@@ -12,3 +12,10 @@ export function uid(length = 11) {
   }
   return buffer.substring(index, index++ + length)
 }
+
+export function getUniqueId() {
+  const time = Date.now()
+  const rand = Math.floor(Math.random() * 1000)
+  // Combine timestamp with a small random component; result stays within Number.MAX_SAFE_INTEGER.
+  return time * 1000 + rand
+}

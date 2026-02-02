@@ -14,7 +14,7 @@ export function useSimulateCalls({
   calls,
 }: {
   account?: Address
-  calls: { to?: Address; data?: Hex; value?: bigint }[]
+  calls: { to?: Address; data?: Hex; value?: bigint; gas?: bigint }[]
 }) {
   const client = useClient()
 
@@ -27,6 +27,7 @@ export function useSimulateCalls({
           account,
           calls: calls as any,
           traceAssetChanges: true,
+          traceTransfers: true,
         })
       } catch (error) {
         console.error('simulateCalls error', error)

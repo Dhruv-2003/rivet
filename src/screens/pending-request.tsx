@@ -15,7 +15,6 @@ import {
   formatTransaction,
   formatTransactionRequest,
   hexToString,
-  isHex,
   numberToHex,
   parseEther,
   parseGwei,
@@ -54,7 +53,12 @@ import {
 } from '~/hooks/usePrepareTransactionRequest'
 import { useSimulateCalls } from '~/hooks/useSimulateCalls'
 import { getMessenger } from '~/messengers'
-import { useAccountStore, usePendingRequestsStore } from '~/zustand'
+import {
+  pendingRequestsStore,
+  useAccountStore,
+  useNetworkStore,
+  usePendingRequestsStore,
+} from '~/zustand'
 import type { PendingRequest } from '~/zustand/pending-requests'
 
 import * as styles from './pending-request.css'
@@ -103,7 +107,38 @@ function PendingRequestContainer({
 }) {
   return (
     <Container
-      header={header}
+      header={
+        <Box
+          display="flex"
+          alignItems="center"
+          justifyContent="space-between"
+          width="full"
+        >
+          <Text size="16px">{header}</Text>
+          <Button.Symbol
+            label="Close (Emergency Exit)"
+            height="24px"
+            onClick={() => {
+              // Emergency exit - send rejection response and locally remove
+              const firstRequest =
+                pendingRequestsStore.getState().pendingRequests[0]
+              if (firstRequest) {
+                // Signal background to reject (handles waiting promises)
+                backgroundMessenger.send('pendingRequest', {
+                  request: firstRequest,
+                  status: 'rejected',
+                })
+                // Immediately remove locally to ensure UI updates
+                pendingRequestsStore
+                  .getState()
+                  .removePendingRequest(firstRequest.id)
+              }
+            }}
+            symbol="xmark"
+            variant="ghost primary"
+          />
+        </Box>
+      }
       footer={
         <Inline gap="12px" wrap={false}>
           <Button disabled={isLoading} onClick={onReject} variant="tint red">
@@ -130,6 +165,7 @@ function SendCallsRequest(args: {
 
   // Prepare the transaction request for signing (populate gas estimate, fees, etc if non-existent).
   const { account } = useAccountStore()
+  const { network } = useNetworkStore()
   const calls = useMemo(
     () => params.calls.map((call) => formatTransaction(call)),
     [params.calls],
@@ -156,6 +192,7 @@ function SendCallsRequest(args: {
       to: call?.to || undefined,
       data: call?.data,
       value: call?.value,
+      gas: call?.gas,
     }
   })
 
@@ -168,9 +205,23 @@ function SendCallsRequest(args: {
   const [tab, setTab] = useState('calls')
 
   const handleApprove = async () => {
+    // Serialize the transaction request into RPC format (hex).
     const serializedCalls = preparedCallQueries.map((query) =>
-      formatTransactionRequest(query.data!),
+      query.data
+        ? omitBy(
+            formatTransactionRequest(query.data),
+            (value) => value === undefined || value === null,
+          )
+        : {},
     )
+
+    // Get the prepared gas params from the first call (they should be same for all in the batch context)
+    // or we should aggregate? For maxFeePerGas/maxPriorityFeePerGas it's global.
+    // For gas limit, it's weird because wallet_sendCalls doesn't have a global gas limit.
+    // However, handleSendCalls in rpc.ts will use what we pass.
+    const { maxFeePerGas, maxPriorityFeePerGas, nonce } =
+      preparedCallQueries[0]?.data || {}
+
     await backgroundMessenger.send('pendingRequest', {
       request: {
         ...args.request,
@@ -178,7 +229,12 @@ function SendCallsRequest(args: {
           {
             ...args.request.params![0],
             calls: serializedCalls as any,
-          },
+            maxFeePerGas: maxFeePerGas ? numberToHex(maxFeePerGas) : undefined,
+            maxPriorityFeePerGas: maxPriorityFeePerGas
+              ? numberToHex(maxPriorityFeePerGas)
+              : undefined,
+            nonce: typeof nonce === 'number' ? numberToHex(nonce) : undefined,
+          } as any,
         ],
       },
       status: 'approved',
@@ -207,15 +263,38 @@ function SendCallsRequest(args: {
                 An error occurred while simulating transaction execution. This
                 transaction will unlikely succeed.
               </Text>
-              {error instanceof BaseError && (
+              {error instanceof BaseError ? (
                 <>
                   <Text size="11px">Reason: {error.shortMessage}</Text>
                   <Text size="11px">Details: {error.details}</Text>
                 </>
+              ) : error instanceof Error ? (
+                <Text size="11px">Reason: {error.message}</Text>
+              ) : (
+                <Text size="11px">Reason: {String(error)}</Text>
               )}
             </Stack>
           </Box>
         )}
+        {/* {!error && simulationError && (
+          <Box backgroundColor="surface/yellowTint" padding="8px">
+            <Stack gap="12px">
+              <Text size="11px">
+                Simulation warning: This transaction may fail.
+              </Text>
+              {simulationError instanceof BaseError ? (
+                <>
+                  <Text size="11px">Reason: {simulationError.shortMessage}</Text>
+                  <Text size="11px">Details: {simulationError.details}</Text>
+                </>
+              ) : simulationError instanceof Error ? (
+                <Text size="11px">Reason: {simulationError.message}</Text>
+              ) : (
+                <Text size="11px">Reason: {String(simulationError)}</Text>
+              )}
+            </Stack>
+          </Box>
+        )} */}
         <Columns gap="12px">
           <Column width="1/3">
             <LabelledContent label="From">
@@ -249,6 +328,31 @@ function SendCallsRequest(args: {
                     <Text color="text/tertiary">gwei</Text>
                   </>
                 )}
+              </Text>
+            </LabelledContent>
+          </Column>
+        </Columns>
+        <Columns gap="12px">
+          <Column width="1/3">
+            <LabelledContent label="Total Gas (Max Cost)">
+              <Text size="12px">
+                {(() => {
+                  const totalGas = preparedCallQueries.reduce((sum, query) => {
+                    const gas = query.data?.gas
+                    return sum + (typeof gas === 'bigint' ? gas : 0n)
+                  }, 0n)
+                  if (totalGas > 0n && typeof maxFeePerGas === 'bigint') {
+                    return (
+                      <>
+                        {numberIntl8SigFigs.format(
+                          Number(formatEther(totalGas * maxFeePerGas)),
+                        )}{' '}
+                        <Text color="text/tertiary">ETH</Text>
+                      </>
+                    )
+                  }
+                  return null
+                })()}
               </Text>
             </LabelledContent>
           </Column>
@@ -415,7 +519,10 @@ function SendCallsRequest(args: {
                     <Spinner size="24px" />
                   </Box>
                 ) : (
-                  <AssetChanges changes={simulationData?.assetChanges} />
+                  <AssetChanges
+                    changes={simulationData?.assetChanges}
+                    networkType={network.type}
+                  />
                 )}
               </TabsContent>
             </Inset>
@@ -440,6 +547,7 @@ function SendTransactionRequest(args: {
 
   // Prepare the transaction request for signing (populate gas estimate, fees, etc if non-existent).
   const { account: account_ } = useAccountStore()
+  const { network } = useNetworkStore()
   const {
     data: preparedRequest,
     error,
@@ -463,16 +571,21 @@ function SendTransactionRequest(args: {
     data,
   } = request
 
+  // Skip simulation for contract deployments (no `to` address) as simulateCalls doesn't support them
+  const isContractDeployment = !to
   const { data: simulationData, isLoading: isSimulationLoading } =
     useSimulateCalls({
       account: from,
-      calls: [
-        {
-          to: to ?? undefined,
-          data,
-          value,
-        },
-      ],
+      calls: isContractDeployment
+        ? []
+        : [
+            {
+              to: to ?? undefined,
+              data,
+              value,
+              gas,
+            },
+          ],
     })
 
   ////////////////////////////////////////////////////////////////////////
@@ -480,7 +593,9 @@ function SendTransactionRequest(args: {
   const handleApprove = async () => {
     // Serialize the transaction request into RPC format (hex).
     const txRequest = formatTransactionRequest(request)
-    const params = [omitBy(txRequest, (value) => !isHex(value))]
+    const params = [
+      omitBy(txRequest, (value) => value === undefined || value === null),
+    ]
 
     await backgroundMessenger.send('pendingRequest', {
       request: { ...args.request, params: params as any },
@@ -553,15 +668,38 @@ function SendTransactionRequest(args: {
                 An error occurred while simulating transaction execution. This
                 transaction will unlikely succeed.
               </Text>
-              {error instanceof BaseError && (
+              {error instanceof BaseError ? (
                 <>
                   <Text size="11px">Reason: {error.shortMessage}</Text>
                   <Text size="11px">Details: {error.details}</Text>
                 </>
+              ) : error instanceof Error ? (
+                <Text size="11px">Reason: {error.message}</Text>
+              ) : (
+                <Text size="11px">Reason: {String(error)}</Text>
               )}
             </Stack>
           </Box>
         )}
+        {/* {!error && simulationError && (
+          <Box backgroundColor="surface/yellowTint" padding="8px">
+            <Stack gap="12px">
+              <Text size="11px">
+                Simulation warning: This transaction may fail.
+              </Text>
+              {simulationError instanceof BaseError ? (
+                <>
+                  <Text size="11px">Reason: {simulationError.shortMessage}</Text>
+                  <Text size="11px">Details: {simulationError.details}</Text>
+                </>
+              ) : simulationError instanceof Error ? (
+                <Text size="11px">Reason: {simulationError.message}</Text>
+              ) : (
+                <Text size="11px">Reason: {String(simulationError)}</Text>
+              )}
+            </Stack>
+          </Box>
+        )} */}
         <Columns gap="12px">
           <Column width="1/3">
             <LabelledContent
@@ -774,7 +912,7 @@ function SendTransactionRequest(args: {
           </Column>
         </Columns>
         <Columns gap="12px">
-          <Column>
+          <Column width="1/3">
             <LabelledContent
               label="Nonce"
               labelRight={
@@ -799,7 +937,23 @@ function SendTransactionRequest(args: {
               <Text size="12px">{nonce}</Text>
             </LabelledContent>
           </Column>
+          <Column width="1/3">
+            <LabelledContent label="Total Gas (Max Cost)">
+              <Text size="12px">
+                {typeof gas === 'bigint' &&
+                  typeof maxFeePerGas === 'bigint' && (
+                    <>
+                      {numberIntl8SigFigs.format(
+                        Number(formatEther(gas * maxFeePerGas)),
+                      )}{' '}
+                      <Text color="text/tertiary">ETH</Text>
+                    </>
+                  )}
+              </Text>
+            </LabelledContent>
+          </Column>
         </Columns>
+
         <Tabs.Root asChild value={tab}>
           <Box display="flex" flexDirection="column" height="full">
             <TabsList
@@ -844,7 +998,10 @@ function SendTransactionRequest(args: {
                     <Spinner size="24px" />
                   </Box>
                 ) : (
-                  <AssetChanges changes={simulationData?.assetChanges} />
+                  <AssetChanges
+                    changes={simulationData?.assetChanges}
+                    networkType={network.type}
+                  />
                 )}
               </TabsContent>
             </Inset>

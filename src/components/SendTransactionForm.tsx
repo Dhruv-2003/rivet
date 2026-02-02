@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import {
   type Address,
@@ -13,6 +14,8 @@ import {
 import * as Form from '~/components/form'
 import { Box, Button, Inline, Stack, Text } from '~/design-system'
 import { useBalance } from '~/hooks/useBalance'
+import { getMessenger } from '~/messengers'
+import { getUniqueId } from '~/utils'
 import { pendingRequestsStore } from '~/zustand'
 
 type SendTransactionFormData = {
@@ -33,12 +36,43 @@ export function SendTransactionForm({
   onSubmit?: () => void
 }) {
   const { data: balance } = useBalance({ address: from })
+  const [lastTxHash, setLastTxHash] = useState<string | null>(null)
+  const [pendingRequestId, setPendingRequestId] = useState<number | null>(null)
+  const pendingRequestIdRef = useRef<number | null>(null)
+
+  // Listen for request results from background (set up once)
+  useEffect(() => {
+    const backgroundMessenger = getMessenger('background:wallet')
+
+    const handler = async ({
+      requestId,
+      result,
+      error,
+    }: { requestId: number; result?: string; error?: string }) => {
+      if (pendingRequestIdRef.current === requestId) {
+        if (result) {
+          setLastTxHash(result)
+        } else if (error) {
+          // Error is already shown in toast by the background
+        }
+        pendingRequestsStore.getState().removePendingRequest(requestId)
+        setPendingRequestId(null)
+      }
+    }
+
+    return backgroundMessenger.reply('requestResult', handler)
+  }, [])
+
+  useEffect(() => {
+    pendingRequestIdRef.current = pendingRequestId
+  }, [pendingRequestId])
 
   const {
     handleSubmit,
     register,
     reset,
     setValue,
+    watch,
     formState: { errors },
   } = useForm<SendTransactionFormData>({
     defaultValues: {
@@ -48,17 +82,25 @@ export function SendTransactionForm({
     },
   })
 
+  const toValue = watch('to')
+  const dataValue = watch('data')
+  const isContractDeployment = !toValue && dataValue
+
   const submit = handleSubmit(({ to, value, data }) => {
     // Generate unique request ID
-    const requestId = Date.now()
+    const requestId = getUniqueId()
 
     // Create the transaction request params
     const txParams: RpcTransactionRequest = {
       from: from as Hex,
-      to: to as Hex,
+      to: to ? (to as Hex) : undefined, // Allow undefined for contract deployment
       value: value ? numberToHex(parseEther(value)) : undefined,
       data: data ? (data as Hex) : undefined,
     }
+
+    // Clear previous hash
+    setLastTxHash(null)
+    setPendingRequestId(requestId)
 
     // Add synthetic pending request
     pendingRequestsStore.getState().addPendingRequest({
@@ -84,11 +126,19 @@ export function SendTransactionForm({
           <Form.InputField
             label="To Address"
             height="24px"
-            placeholder="0x..."
+            placeholder="0x... (leave empty for contract deployment)"
             register={register('to', {
-              required: 'Address is required',
-              validate: (value) =>
-                isAddress(value) || 'Invalid Ethereum address',
+              validate: (value) => {
+                // For contract deployment, 'to' can be empty if 'data' is provided
+                if (!value) {
+                  const data = watch('data')
+                  if (!data) {
+                    return 'Address required (or provide bytecode in Data for contract deployment)'
+                  }
+                  return true
+                }
+                return isAddress(value) || 'Invalid Ethereum address'
+              },
             })}
           />
           {errors.to && (
@@ -149,7 +199,7 @@ export function SendTransactionForm({
 
         <Box>
           <Form.InputField
-            label="Data (optional)"
+            label={isContractDeployment ? 'Bytecode' : 'Data (optional)'}
             height="24px"
             placeholder="0x..."
             register={register('data', {
@@ -164,6 +214,11 @@ export function SendTransactionForm({
               {errors.data.message}
             </Text>
           )}
+          {isContractDeployment && (
+            <Text color="text/tertiary" size="9px" style={{ marginTop: '4px' }}>
+              Contract will be deployed when you submit
+            </Text>
+          )}
         </Box>
 
         <Inline gap="8px">
@@ -173,9 +228,31 @@ export function SendTransactionForm({
             width="fit"
             type="submit"
           >
-            Send Transaction
+            {isContractDeployment ? 'Deploy Contract' : 'Send Transaction'}
           </Button>
         </Inline>
+
+        {lastTxHash && (
+          <Stack gap="8px">
+            <Text size="9px" color="text/tertiary">
+              TRANSACTION HASH
+            </Text>
+            <Inline gap="8px" alignVertical="center" wrap={false}>
+              <Text size="11px" style={{ wordBreak: 'break-all', flex: 1 }}>
+                {lastTxHash}
+              </Text>
+              <Button.Symbol
+                height="20px"
+                label="Copy"
+                onClick={() => {
+                  navigator.clipboard.writeText(lastTxHash)
+                }}
+                symbol="doc.on.doc"
+                variant="ghost primary"
+              />
+            </Inline>
+          </Stack>
+        )}
       </Stack>
     </Form.Root>
   )
