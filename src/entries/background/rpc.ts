@@ -123,20 +123,20 @@ export function setupRpcHandler({ messenger }: { messenger: Messenger }) {
           },
         } as RpcResponse
 
-      addPendingRequest({ ...request, sender: meta.sender })
-
-      const response = await new Promise<RpcResponse>((resolve, reject) => {
-        // Register this promise in the global map so the handler can resolve it
+      const response = await new Promise<RpcResponse>((resolve) => {
+        // Register this promise in the global map BEFORE adding to pending requests
+        // to avoid race conditions where the handler fires before the promise is registered
         const pendingPromises = (globalThis as any).__rivetPendingPromises
         if (pendingPromises) {
           pendingPromises.set(request.id, {
             resolve,
-            reject,
             rpcClient,
             networkType,
             timestamp: Date.now(),
           })
         }
+        // Now add the pending request - the handler is ready to receive it
+        addPendingRequest({ ...request, sender: meta.sender })
       })
       return response as RpcResponse
     }
@@ -173,46 +173,23 @@ export function setupRpcHandler({ messenger }: { messenger: Messenger }) {
         const { bypassConnectAuth } = settingsStore.getState()
         if (bypassConnectAuth) return authorize()
 
-        const { addPendingRequest, removePendingRequest } =
-          pendingRequestsStore.getState()
+        const { addPendingRequest } = pendingRequestsStore.getState()
 
-        addPendingRequest({ ...request, sender: meta.sender })
-
-        try {
-          const response = await new Promise<RpcResponse>((resolve) => {
-            // Register this promise for eth_requestAccounts
-            const pendingPromises = (globalThis as any).__rivetPendingPromises
-            if (pendingPromises) {
-              pendingPromises.set(request.id, {
-                resolve: (response: RpcResponse) => {
-                  // For requestAccounts, if approved, call authorize
-                  if ('result' in response || 'error' in response) {
-                    resolve(response)
-                  } else {
-                    resolve(authorize())
-                  }
-                },
-                reject: () => {
-                  resolve({
-                    id: request.id,
-                    jsonrpc: '2.0',
-                    error: {
-                      code: UserRejectedRequestError.code,
-                      message: UserRejectedRequestError.message,
-                      data: { request },
-                    },
-                  } satisfies RpcResponse)
-                },
-                // Store authorize function for later use
-                customHandler: authorize,
-                timestamp: Date.now(),
-              })
-            }
-          })
-          return response as RpcResponse
-        } finally {
-          removePendingRequest(request.id)
-        }
+        const response = await new Promise<RpcResponse>((resolve) => {
+          // Register this promise BEFORE adding to pending requests
+          const pendingPromises = (globalThis as any).__rivetPendingPromises
+          if (pendingPromises) {
+            pendingPromises.set(request.id, {
+              resolve,
+              // Store authorize function for eth_requestAccounts approval
+              customHandler: authorize,
+              timestamp: Date.now(),
+            })
+          }
+          // Now add the pending request
+          addPendingRequest({ ...request, sender: meta.sender })
+        })
+        return response as RpcResponse
       }
 
       if (request.method === 'eth_accounts') {
@@ -926,11 +903,15 @@ async function handleSendCalls({
 // Handle pending requests initiated from the wallet UI (not from inpage)
 // This is a global handler that processes all pending request approvals/rejections
 export function setupWalletPendingRequestHandler() {
+  // Guard against multiple initializations (e.g., if background script reloads)
+  if ((globalThis as any).__rivetPendingPromises) {
+    return // Already initialized
+  }
+
   const pendingPromises = new Map<
     number,
     {
       resolve: (value: RpcResponse) => void
-      reject: (error: Error) => void
       rpcClient?: HttpRpcClient
       networkType?: 'anvil' | 'remote'
       customHandler?: () => RpcResponse
@@ -939,59 +920,73 @@ export function setupWalletPendingRequestHandler() {
   >()
 
   // Cleanup stale entries every minute
-  setInterval(() => {
+  const cleanupInterval = setInterval(() => {
     const now = Date.now()
     for (const [id, promise] of pendingPromises.entries()) {
-      // 5 minute timeout
+      // 5 minute timeout - resolve with timeout error (don't reject)
       if (now - promise.timestamp > 5 * 60 * 1000) {
-        promise.reject(new Error('Request timed out'))
+        promise.resolve({
+          id,
+          jsonrpc: '2.0',
+          error: {
+            code: -32603,
+            message: 'Request timed out',
+          },
+        } as RpcResponse)
         pendingPromises.delete(id)
       }
     }
   }, 60 * 1000)
 
+  // Store cleanup interval reference for potential cleanup
+  ;(globalThis as any).__rivetCleanupInterval = cleanupInterval
+
   // Expose a way to register promises for inpage-initiated requests
   ;(globalThis as any).__rivetPendingPromises = pendingPromises
 
   walletMessenger.reply('pendingRequest', async ({ request, status }) => {
-    const { removePendingRequest } = pendingRequestsStore.getState()
-    removePendingRequest(request.id)
-
     // Check if this is an inpage-initiated request (has a promise waiting)
     const pendingPromise = pendingPromises.get(request.id)
 
     if (pendingPromise) {
-      // Inpage-initiated request - resolve/reject the promise
-      const { resolve, reject, rpcClient, networkType, customHandler } =
-        pendingPromise
+      // Inpage-initiated request - always resolve with proper RpcResponse
+      const { resolve, rpcClient, networkType, customHandler } = pendingPromise
       pendingPromises.delete(request.id)
 
+      // Remove from pending requests store AFTER we've retrieved the promise
+      const { removePendingRequest } = pendingRequestsStore.getState()
+      removePendingRequest(request.id)
+
       if (status === 'rejected') {
-        if (reject) {
-          reject(new Error('User rejected request'))
-        } else {
-          resolve({
-            id: request.id,
-            jsonrpc: '2.0',
-            error: {
-              code: UserRejectedRequestError.code,
-              message: UserRejectedRequestError.message,
-              data: { request },
-            },
-          } satisfies RpcResponse)
-        }
+        // Always resolve with error response - never reject
+        resolve({
+          id: request.id,
+          jsonrpc: '2.0',
+          error: {
+            code: UserRejectedRequestError.code,
+            message: UserRejectedRequestError.message,
+            data: { request },
+          },
+        } satisfies RpcResponse)
         return
       }
 
-      // Handle special case for eth_requestAccounts
+      // Handle special case for eth_requestAccounts - use custom authorize handler
       if (customHandler) {
         resolve(customHandler())
         return
       }
 
-      // Handle normal requests
+      // Handle normal signable requests (eth_sendTransaction, personal_sign, etc.)
       if (!rpcClient || !networkType) {
-        reject?.(new Error('Missing rpcClient or networkType'))
+        resolve({
+          id: request.id,
+          jsonrpc: '2.0',
+          error: {
+            code: -32603,
+            message: 'Internal error: missing RPC client configuration',
+          },
+        } as RpcResponse)
         return
       }
 
@@ -1004,12 +999,24 @@ export function setupWalletPendingRequestHandler() {
         )
         resolve(response)
       } catch (err) {
-        reject?.(err as Error)
+        // Resolve with error response - never reject
+        resolve({
+          id: request.id,
+          jsonrpc: '2.0',
+          error: {
+            code: -32603,
+            message: err instanceof Error ? err.message : 'Unknown error',
+          },
+        } as RpcResponse)
       }
     } else {
-      // Wallet-initiated request - execute directly
+      // No promise found - this could be a wallet-initiated request or
+      // the promise was already cleaned up. Remove from pending requests store.
+      const { removePendingRequest } = pendingRequestsStore.getState()
+      removePendingRequest(request.id)
+
       if (status === 'rejected') {
-        // Send rejection notification
+        // Send rejection notification for wallet-initiated requests
         walletMessenger.send('requestResult', {
           requestId: request.id,
           error: 'User rejected request',
@@ -1017,6 +1024,7 @@ export function setupWalletPendingRequestHandler() {
         return
       }
 
+      // Wallet-initiated request - execute directly
       const { network } = networkStore.getState()
       const rpcClient = getHttpRpcClient(network.rpcUrl)
       const networkType = network.type || 'anvil'
@@ -1036,6 +1044,14 @@ export function setupWalletPendingRequestHandler() {
               typeof response.result === 'string'
                 ? response.result
                 : JSON.stringify(response.result),
+          })
+        } else if ('error' in response) {
+          walletMessenger.send('requestResult', {
+            requestId: request.id,
+            error:
+              typeof response.error === 'string'
+                ? response.error
+                : (response.error as any)?.message || 'Unknown error',
           })
         }
       } catch (error) {
